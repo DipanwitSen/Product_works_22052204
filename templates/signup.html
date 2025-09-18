@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Signup</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #fcefee;
+        text-align: center;
+      }
+      .box {
+        background: #fff;
+        padding: 20px;
+        border-radius: 12px;
+        width: 300px;
+        margin: 100px auto;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      }
+      input {
+        width: 90%;
+        padding: 10px;
+        margin: 8px 0;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+      }
+      button {
+        background: #ffb6b9;
+        border: none;
+        padding: 10px;
+        width: 100%;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #ff9aa2;
+      }
+      a {
+        display: block;
+        margin-top: 10px;
+        color: #555;
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h2>Create Account</h2>
+      <form method="POST">
+        <input
+          type="text"
+          name="username"
+          placeholder="Username"
+          required
+        /><br />
+        <input type="email" name="email" placeholder="Email" required /><br />
+        <input
+          type="password"
+          name="password"
+          placeholder="Password"
+          required
+        /><br />
+        <button type="submit">Signup</button>
+      </form>
+      <a href="{{ url_for('login') }}">Already have an account? Login</a>
+    </div>
+  </body>
+</html>

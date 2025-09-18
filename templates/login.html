@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Login</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #e6f7f5;
+        text-align: center;
+      }
+      .box {
+        background: #fff;
+        padding: 20px;
+        border-radius: 12px;
+        width: 300px;
+        margin: 100px auto;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      }
+      input {
+        width: 90%;
+        padding: 10px;
+        margin: 8px 0;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+      }
+      button {
+        background: #a3d8d1;
+        border: none;
+        padding: 10px;
+        width: 100%;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #7bc7bd;
+      }
+      a {
+        display: block;
+        margin-top: 10px;
+        color: #555;
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h2>Login</h2>
+      <form method="POST">
+        <input
+          type="text"
+          name="username"
+          placeholder="Username"
+          required
+        /><br />
+        <input
+          type="password"
+          name="password"
+          placeholder="Password"
+          required
+        /><br />
+        <button type="submit">Login</button>
+      </form>
+      <a href="{{ url_for('signup') }}">Create account</a>
+      <a href="{{ url_for('forgot') }}">Forgot Password?</a>
+    </div>
+  </body>
+</html>

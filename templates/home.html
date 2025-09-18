@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Home</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #fef9e7;
+        text-align: center;
+      }
+      .box {
+        background: #fff;
+        padding: 20px;
+        border-radius: 12px;
+        width: 400px;
+        margin: 100px auto;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      }
+      a {
+        margin: 10px;
+        display: inline-block;
+        padding: 10px 15px;
+        background: #ffd76d;
+        border-radius: 8px;
+        color: #000;
+        text-decoration: none;
+      }
+      a:hover {
+        background: #ffc94d;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h2>Welcome, {{ user }} 🎉</h2>
+      <p>Your role: <b>{{ role }}</b></p>
+      <a href="{{ url_for('logout') }}">Logout</a>
+      {% if role in ["admin","dbmanager"] %}
+      <a href="{{ url_for('admin') }}">Admin Dashboard</a>
+      {% endif %}
+    </div>
+  </body>
+</html>
