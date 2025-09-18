@@ -10,27 +10,31 @@ DB_NAME = "users.db"
 
 # ---------------- DATABASE SETUP ----------------
 def init_db():
-    if not os.path.exists(DB_NAME):
-        conn = sqlite3.connect(DB_NAME)
-        c = conn.cursor()
-        c.execute('''CREATE TABLE users
-                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                      username TEXT UNIQUE,
-                      email TEXT UNIQUE,
-                      password TEXT,
-                      role TEXT)''')
-        conn.commit()
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
 
-        # Create a default admin and dbmanager
+    # Create table if not exists
+    c.execute('''CREATE TABLE IF NOT EXISTS users
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  username TEXT UNIQUE,
+                  email TEXT UNIQUE,
+                  password TEXT,
+                  role TEXT)''')
+    
+    # Check if admin exists
+    c.execute("SELECT * FROM users WHERE username=? OR email=?", ("admin", "admin@example.com"))
+    if not c.fetchone():
         c.execute("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)",
-                  ("admin", "22052204@kiit.ac.in", "admin123", "admin"))
+                  ("admin", "admin@example.com", "admin123", "admin"))
+
+    # Check if dbmanager exists
+    c.execute("SELECT * FROM users WHERE username=? OR email=?", ("dbmanager", "22052204@kiit.ac.in"))
+    if not c.fetchone():
         c.execute("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)",
                   ("dbmanager", "22052204@kiit.ac.in", "dbpass123", "dbmanager"))
 
-        conn.commit()
-        conn.close()
-
-init_db()
+    conn.commit()
+    conn.close()
 
 # ---------------- HELPER FUNCTIONS ----------------
 def send_otp_email(to_email, otp):
