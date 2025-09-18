@@ -4,7 +4,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "supersecret")
+app.secret_key = os.environ.get("SECRET_KEY", "supersecret")  # from env
 
 DB_NAME = "users.db"
 
@@ -21,13 +21,13 @@ def init_db():
                   password TEXT,
                   role TEXT)''')
     
-    # Check if admin exists
+    # Insert admin if not exists
     c.execute("SELECT * FROM users WHERE username=? OR email=?", ("admin", "admin@example.com"))
     if not c.fetchone():
         c.execute("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)",
                   ("admin", "admin@example.com", "admin123", "admin"))
 
-    # Check if dbmanager exists
+    # Insert dbmanager if not exists
     c.execute("SELECT * FROM users WHERE username=? OR email=?", ("dbmanager", "22052204@kiit.ac.in"))
     if not c.fetchone():
         c.execute("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)",
@@ -36,26 +36,30 @@ def init_db():
     conn.commit()
     conn.close()
 
+init_db()
+
 # ---------------- HELPER FUNCTIONS ----------------
+EMAIL_USER = os.environ.get("EMAIL_USER")
+EMAIL_PASS = os.environ.get("EMAIL_PASS")
+
 def send_otp_email(to_email, otp):
-    sender = os.getenv("EMAIL_USER")      
-    sender_pass = os.getenv("EMAIL_PASS")  
-
-    msg = MIMEMultipart()
-    msg["From"] = sender
-    msg["To"] = to_email
-    msg["Subject"] = "Password Reset OTP"
-
-    body = f"Your OTP for password reset is: {otp}"
-    msg.attach(MIMEText(body, "plain"))
-
     try:
+        sender = EMAIL_USER
+        sender_pass = EMAIL_PASS
+
+        msg = MIMEMultipart()
+        msg["From"] = sender
+        msg["To"] = to_email
+        msg["Subject"] = "Password Reset OTP"
+
+        body = f"Your OTP for password reset is: {otp}"
+        msg.attach(MIMEText(body, "plain"))
+
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
         server.login(sender, sender_pass)
         server.sendmail(sender, to_email, msg.as_string())
         server.quit()
-        print("OTP sent successfully")
         return True
     except Exception as e:
         print("Email error:", e)
@@ -156,7 +160,7 @@ def reset_password():
         return redirect(url_for("login"))
     return render_template("reset.html")
 
-@app.route("/admin")
+@app.route("/admin", methods=["GET", "POST"])
 def admin():
     if "role" in session and session["role"] in ["admin", "dbmanager"]:
         conn = sqlite3.connect(DB_NAME)
@@ -174,5 +178,4 @@ def logout():
     return redirect(url_for("login"))
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(debug=True)
