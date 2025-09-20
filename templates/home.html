@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>LocalMart</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+    />
+    <style>
+      body {
+        font-family: "Segoe UI", sans-serif;
+        background: #f5f5f7;
+        margin: 0;
+        padding: 0;
+      }
+      header {
+        background: #ff6b81;
+        padding: 15px;
+        color: white;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 1.8em;
+      }
+      nav a {
+        margin-left: 15px;
+        color: white;
+        text-decoration: none;
+        font-weight: bold;
+      }
+      nav a:hover {
+        text-decoration: underline;
+      }
+      .container {
+        padding: 20px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      }
+      th,
+      td {
+        padding: 10px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+      }
+      th {
+        background: #ffb6b9;
+      }
+      img {
+        max-width: 50px;
+        border-radius: 5px;
+      }
+      .btn {
+        background: #ff6b81;
+        color: white;
+        padding: 6px 12px;
+        text-decoration: none;
+        border-radius: 6px;
+      }
+      .btn:hover {
+        background: #ff4757;
+      }
+      .welcome {
+        margin-bottom: 15px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>LocalMart</h1>
+      <nav>
+        {% if 'username' in session %}
+        <span>Hi {{ session['username'] }} ({{ session['role'] }})</span>
+        <a href="{{ url_for('logout') }}"
+          ><i class="fa fa-sign-out"></i> Logout</a
+        >
+        <a href="{{ url_for('add_product') }}"
+          ><i class="fa fa-plus-circle"></i> Add Product</a
+        >
+        <a href="{{ url_for('my_orders') }}"
+          ><i class="fa fa-shopping-basket"></i> My Orders</a
+        >
+        <a href="{{ url_for('seller_orders') }}"
+          ><i class="fa fa-box"></i> Seller Orders</a
+        >
+        {% if session['role'] in ['admin','dbmanager'] %}
+        <a href="{{ url_for('admin') }}"
+          ><i class="fa fa-cog"></i> Admin Dashboard</a
+        >
+        {% endif %} {% else %}
+        <a href="{{ url_for('login') }}"><i class="fa fa-sign-in"></i> Login</a>
+        <a href="{{ url_for('signup') }}"
+          ><i class="fa fa-user-plus"></i> Signup</a
+        >
+        {% endif %}
+      </nav>
+    </header>
+
+    <div class="container">
+      <h2>Available Products</h2>
+      <table>
+        <tr>
+          <th>Product</th>
+          <th>Price (₹)</th>
+          <th>Image</th>
+          <th>Action</th>
+        </tr>
+        {% for p in products %}
+        <tr>
+          <td>{{ p['name'] }}</td>
+          <td>₹{{ p['price'] }}</td>
+          <td>
+            {% if p['image'] %}<img
+              src="{{ url_for('static', filename='uploads/' ~ p['image']) }}"
+            />{% endif %}
+          </td>
+          <td>
+            <a class="btn" href="{{ url_for('buy', product_id=p['id']) }}"
+              >Buy</a
+            >
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+  </body>
+</html>
