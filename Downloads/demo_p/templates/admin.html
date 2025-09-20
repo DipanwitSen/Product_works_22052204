@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Admin Dashboard</title>
+  <style>
+    body { font-family:'Segoe UI',sans-serif; background:#fffaf0; padding:20px; }
+    h2 { color:#ff6b81; text-align:center; }
+    table { width:100%; border-collapse:collapse; margin-top:20px; }
+    th, td { padding:10px; border:1px solid #ddd; text-align:left; }
+    th { background:#ffd1a1; }
+    input, select { padding:5px; width:100%; border-radius:5px; border:1px solid #ccc;}
+    button { padding:5px 10px; background:#ff6b81; color:white; border:none; border-radius:5px; cursor:pointer; }
+    button:hover { background:#ff4757; }
+    form { display:flex; gap:5px; }
+    .back { margin-top:15px; display:inline-block; padding:8px 12px; background:#ffa45c; color:black; border-radius:6px; text-decoration:none;}
+    .back:hover { background:#ff8c33; }
+  </style>
+</head>
+<body>
+  <h2>Admin Dashboard</h2>
+  <table>
+    <tr>
+      <th>Username</th>
+      <th>Email</th>
+      <th>Role</th>
+      <th>Action</th>
+    </tr>
+    {% for u in users %}
+    <tr>
+      <form method="post">
+        <td>{{ u[0] }}<input type="hidden" name="username" value="{{ u[0] }}"></td>
+        <td><input type="email" name="email" value="{{ u[1] }}"></td>
+        <td>
+          <select name="role">
+            <option value="user" {% if u[2]=='user' %}selected{% endif %}>User</option>
+            <option value="seller" {% if u[2]=='seller' %}selected{% endif %}>Seller</option>
+            <option value="admin" {% if u[2]=='admin' %}selected{% endif %}>Admin</option>
+            <option value="dbmanager" {% if u[2]=='dbmanager' %}selected{% endif %}>DB Manager</option>
+          </select>
+        </td>
+        <td><button type="submit">Update</button></td>
+      </form>
+    </tr>
+    {% endfor %}
+  </table>
+  <a class="back" href="{{ url_for('home') }}">Back to Home</a>
+</body>
+</html>
