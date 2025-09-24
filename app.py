@@ -9,7 +9,34 @@ from werkzeug.utils import secure_filename
 import razorpay
 from functools import wraps
 import re
+import smtplib
+from email.mime.text import MIMEText
 
+# You MUST set these environment variables
+EMAIL_USER = os.getenv("EMAIL_USER")
+EMAIL_PASS = os.getenv("EMAIL_PASS")
+EMAIL_SERVER = os.getenv("EMAIL_SERVER", "smtp.gmail.com")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
+APP_URL = os.getenv("APP_URL", "http://127.0.0.1:5000") # Your app's URL
+
+def send_email(to_email, subject, body):
+    if not EMAIL_USER or not EMAIL_PASS:
+        print("Email not configured. Skipping email sending.")
+        return
+
+    try:
+        msg = MIMEText(body)
+        msg["Subject"] = subject
+        msg["From"] = EMAIL_USER
+        msg["To"] = to_email
+
+        with smtplib.SMTP(EMAIL_SERVER, EMAIL_PORT) as server:
+            server.starttls()
+            server.login(EMAIL_USER, EMAIL_PASS)
+            server.sendmail(EMAIL_USER, to_email, msg.as_string())
+        print(f"Email sent successfully to {to_email}")
+    except Exception as e:
+        print(f"Failed to send email: {e}")
 # Initialize the Flask application
 app = Flask(__name__)
 # Set a secret key for session management, using an environment variable for security
@@ -53,13 +80,23 @@ def init_db():
     cursor = conn.cursor()
     # Create tables if they don't exist
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        email TEXT UNIQUE,
-        password TEXT NOT NULL,
-        role TEXT DEFAULT 'user'
-    )''')
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE,
+            password TEXT NOT NULL,
+            role TEXT DEFAULT 'user'
+        )''')
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL,
+            token TEXT NOT NULL UNIQUE,
+            expiry_date TIMESTAMP NOT NULL
+        );
+    """
+    )
     # Update the products table to include all required columns
     # Update the products table to include all required columns
     cursor.execute('''
@@ -206,12 +243,6 @@ def signup():
             
     return render_template("signup.html")
 
-@app.route("/forgot")
-def forgot():
-    """Renders the forgot password page."""
-    # This route is a placeholder. You would need to implement a password reset
-    # system here, likely involving email verification.
-    return render_template("forgot.html")
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -248,7 +279,90 @@ def logout():
     flash("Logged out successfully!", "success")
     return redirect(url_for("login"))
 
+import uuid
+import datetime
 
+@app.route("/forgot", methods=["GET", "POST"])
+def forgot():
+    """Handles the forgot password request."""
+    if request.method == "POST":
+        email = request.form.get("email")
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+            flash("Invalid email address.", "danger")
+            return redirect(url_for("forgot"))
+
+        conn = get_db_connection()
+        user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+
+        if user:
+            # Generate a unique, time-limited token
+            token = str(uuid.uuid4())
+            expiry = datetime.datetime.now() + datetime.timedelta(hours=1)
+            
+            # Store the token in the database
+            conn.execute(
+                "INSERT INTO password_reset_tokens (email, token, expiry_date) VALUES (?, ?, ?)",
+                (email, token, expiry),
+            )
+            conn.commit()
+            conn.close()
+
+            # Create the reset link and send the email
+            reset_link = f"{APP_URL}/reset?token={token}"
+            body = f"Hello,\n\nTo reset your password, click on the following link: {reset_link}\n\nThis link will expire in one hour.\n\nIf you did not request a password reset, please ignore this email.\n\nThank you,\nYour App Team"
+            send_email(email, "Password Reset Request", body)
+            flash("A password reset link has been sent to your email.", "success")
+        else:
+            flash("Email not found. Please check the address.", "danger")
+        return redirect(url_for("forgot"))
+
+    return render_template("forgot.html")
+
+@app.route("/reset", methods=["GET", "POST"])
+def reset():
+    """Handles the password reset form using a token."""
+    token = request.args.get("token")
+    if not token:
+        flash("Invalid or missing token.", "danger")
+        return redirect(url_for("login"))
+
+    conn = get_db_connection()
+    token_data = conn.execute(
+        "SELECT * FROM password_reset_tokens WHERE token = ? AND expiry_date > ?",
+        (token, datetime.datetime.now()),
+    ).fetchone()
+
+    if not token_data:
+        flash("Token is invalid or has expired.", "danger")
+        conn.close()
+        return redirect(url_for("forgot"))
+
+    if request.method == "POST":
+        new_password = request.form.get("password")
+        confirm_password = request.form.get("confirm_password")
+
+        if new_password != confirm_password:
+            flash("Passwords do not match.", "danger")
+            conn.close()
+            return redirect(url_for("reset", token=token))
+
+        # Update the user's password and delete the token
+        hashed_password = generate_password_hash(new_password)
+        conn.execute(
+            "UPDATE users SET password = ? WHERE email = ?",
+            (hashed_password, token_data["email"]),
+        )
+        conn.execute(
+            "DELETE FROM password_reset_tokens WHERE token = ?", (token,)
+        )
+        conn.commit()
+        conn.close()
+
+        flash("Your password has been reset successfully. Please log in.", "success")
+        return redirect(url_for("login"))
+
+    conn.close()
+    return render_template("reset.html", token=token)
 # ------------------ CORE APPLICATION ROUTES ------------------
 @app.route("/")
 @app.route("/home")
