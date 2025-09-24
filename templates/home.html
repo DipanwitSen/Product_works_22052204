@@ -1,0 +1,117 @@
+{% extends 'base.html' %} {% block content %}
+<div class="container">
+  <h2>Available Products</h2>
+  <div class="product-grid">
+    {% for p in products %}
+    <div class="product-card">
+      <div>
+        {% if p['image'] %}
+        <img
+          src="{{ url_for('static', filename='uploads/' ~ p['image']) }}"
+          alt="{{ p['name'] }}"
+        />
+        {% endif %}
+        <h3>{{ p['name'] }}</h3>
+        <p>₹{{ p['price'] }}</p>
+        {% if p['variant'] %} {% set variant_string = p['variant'] %} {% set
+        variant_pairs = variant_string.split('|') %} {% for pair in
+        variant_pairs %} {% set parts = pair.split('=') %} {% set key =
+        parts[0]|trim %} {% set values = parts[1]|replace('{',' ')|replace('}','
+        ')|trim|split(',') %}
+        <div class="variant-group">
+          <label for="variant-{{ p['id'] }}-{{ key }}"
+            >{{ key|capitalize }}:</label
+          >
+          <select
+            name="variant-{{ key }}"
+            id="variant-{{ p['id'] }}-{{ key }}"
+            required
+            onchange="updateBuyButton({{ p['id'] }})"
+          >
+            <option value="" disabled selected>
+              -- Select {{ key|capitalize }} --
+            </option>
+            {% for value in values %}
+            <option value="{{ value|trim }}">{{ value|trim }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endfor %} {% endif %}
+        <div class="quantity-control">
+          <button onclick="changeQuantity({{ p['id'] }}, -1)">-</button>
+          <input
+            type="number"
+            id="quantity-{{ p['id'] }}"
+            value="1"
+            min="1"
+            max="{{ p['stock'] }}"
+            onchange="updateBuyButton({{ p['id'] }})"
+          />
+          <button onclick="changeQuantity({{ p['id'] }}, 1)">+</button>
+        </div>
+        <a id="buy-btn-{{ p['id'] }}" href="#" class="btn btn-buy disabled"
+          >Buy Now</a
+        >
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+<script>
+  function changeQuantity(productId, change) {
+    const input = document.getElementById(`quantity-${productId}`);
+    let value = parseInt(input.value);
+    if (isNaN(value)) {
+      value = 1;
+    }
+    value += change;
+    if (value < 1) {
+      value = 1;
+    }
+    input.value = value;
+    updateBuyButton(productId);
+  }
+
+  function updateBuyButton(productId) {
+    const buyButton = document.getElementById(`buy-btn-${productId}`);
+    const selects = document.querySelectorAll(
+      `.product-card:has(#buy-btn-${productId}) select`
+    );
+    const quantityInput = document.getElementById(`quantity-${productId}`);
+
+    let allVariantsSelected = true;
+    let variantQuery = "";
+
+    selects.forEach((select) => {
+      if (!select.value) {
+        allVariantsSelected = false;
+      } else {
+        variantQuery += `&${select.name}=${select.value}`;
+      }
+    });
+
+    const quantity = quantityInput.value;
+
+    if (allVariantsSelected && quantity > 0) {
+      buyButton.disabled = false;
+      buyButton.href = `/buy/${productId}?quantity=${quantity}${variantQuery}`;
+      buyButton.classList.remove("disabled");
+    } else {
+      buyButton.disabled = true;
+      buyButton.href = "#";
+      buyButton.classList.add("disabled");
+    }
+  }
+
+  // Initial check on page load to set button state
+  window.onload = function () {
+    const products = document.querySelectorAll(".product-card");
+    products.forEach((product) => {
+      const productId = product
+        .querySelector("a.btn-buy")
+        .id.replace("buy-btn-", "");
+      updateBuyButton(productId);
+    });
+  };
+</script>
+{% endblock %}
