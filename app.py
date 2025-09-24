@@ -186,6 +186,110 @@ def add_product():
         return redirect(url_for("add_product"))
     return render_template("add_product.html")
 
+# ... (existing imports and code) ...
+
+# ------------------ CHATBOT ------------------
+@app.route("/chatbot", methods=["POST"])
+def chatbot():
+    data = request.get_json()
+    user_message = data.get("message", "").lower().strip()
+    
+    conn = get_db_connection()
+    response_message = "I'm sorry, I can only help you with product-related queries. Try asking about products or features."
+    products = []
+    
+    # ------------------ GENERAL QUESTIONS (10) ------------------
+    if any(q in user_message for q in ["hi", "hello", "hey", "what's up", "greetings", "good morning", "good evening", "how are you", "what can you do"]):
+        response_message = "Hello! I am LocalMart's AI assistant. I can help you find products, answer questions about the site, and provide details about your account. What can I help you with?"
+    
+    elif any(q in user_message for q in ["how can i signup", "how to register", "create account", "i want to join", "new user", "how do i create an account"]):
+        response_message = "You can create a new account by clicking the 'Signup' link in the navigation bar. You just need a username, email, and password."
+        
+    elif any(q in user_message for q in ["how can i login", "how to login", "sign in", "i want to log in", "already have an account"]):
+        response_message = "To log in, click the 'Login' link at the top of the page. You'll need your username and password."
+        
+    elif any(q in user_message for q in ["forgot password", "reset password", "lost my password", "can't access my account"]):
+        response_message = "If you've forgotten your password, click the 'Forgot Password?' link on the login page. We'll send an OTP to your registered email to help you reset it."
+        
+    elif any(q in user_message for q in ["who is the admin", "what is a dbmanager", "what is an admin", "admin dashboard", "dbmanager dashboard"]):
+        response_message = "The 'Admin Dashboard' is for site administrators to manage users and their roles (user, seller, admin). The 'dbmanager' role is for database-related tasks. These are powerful roles for site management."
+        
+    elif any(q in user_message for q in ["how to become a seller", "i want to sell something", "add product", "list an item", "upload product", "become a vendor"]):
+        response_message = "To become a seller, first log in to your account. Then, navigate to the 'Add Product' page to upload your product details and an image. Your account role will automatically be a seller once you add your first product."
+
+    elif any(q in user_message for q in ["how can i buy", "how to purchase", "buy a product", "how to checkout"]):
+        response_message = "To buy a product, simply click the 'Buy' button next to the item you want. This will take you to a secure checkout page where you can complete your payment."
+
+    elif any(q in user_message for q in ["my orders", "order history", "past purchases", "what did i buy", "check my orders"]):
+        response_message = "You can view all your past purchases by clicking the 'My Orders' link in the navigation bar after you have logged in."
+
+    elif any(q in user_message for q in ["seller orders", "my sales", "who bought my products", "what did i sell"]):
+        response_message = "If you are a seller, you can track all the orders for your products by clicking the 'Seller Orders' link in the navigation bar."
+
+    elif any(q in user_message for q in ["cancel order", "replace product", "return product", "exchange item"]):
+        response_message = "Currently, our platform does not support order cancellation, replacement, or returns. All sales are final. Please review the product carefully before purchasing."
+
+    # ------------------ PRODUCT-RELATED QUESTIONS (10) ------------------
+    # Search by price
+    elif "under" in user_message or "less than" in user_message:
+        try:
+            import re
+            price_match = re.search(r'(\d+(\.\d+)?)', user_message)
+            if price_match:
+                max_price = float(price_match.group())
+                products = conn.execute("SELECT * FROM products WHERE price <= ?", (max_price,)).fetchall()
+                if products:
+                    response_message = f"Here are some products under ₹{max_price}:"
+                else:
+                    response_message = f"No products found under ₹{max_price}."
+            else:
+                response_message = "I couldn't find a price in your message. Please try 'show me products under 500'."
+        except (ValueError, IndexError):
+            response_message = "I couldn't understand the price. Please try 'show me products under 500'."
+
+    # Search for a product's cost
+    elif "cost" in user_message or "price" in user_message or "how much" in user_message:
+        # Extract product name from message
+        product_name = user_message.replace("what is the", "").replace("of", "").replace("the cost", "").replace("cost", "").replace("price", "").replace("how much", "").strip()
+        product = conn.execute("SELECT * FROM products WHERE name LIKE ?", ('%' + product_name + '%',)).fetchone()
+        if product:
+            response_message = f"The price of {product['name']} is ₹{product['price']}."
+        else:
+            response_message = f"I'm sorry, I couldn't find the price for {product_name}."
+
+    # General product search
+    elif "show me" in user_message or "find" in user_message or "search for" in user_message or "list" in user_message:
+        search_query = user_message.replace("show me", "").replace("find", "").replace("search for", "").replace("list", "").strip()
+        products = conn.execute("SELECT * FROM products WHERE name LIKE ?", ('%' + search_query + '%',)).fetchall()
+        if products:
+            response_message = f"Here's what I found for '{search_query}':"
+        else:
+            response_message = "Sorry, I couldn't find any products matching that description."
+            
+    # Check for image info
+    elif any(q in user_message for q in ["photo of", "image of", "show me a picture of"]):
+        product_name = user_message.replace("photo of", "").replace("image of", "").replace("show me a picture of", "").strip()
+        product = conn.execute("SELECT * FROM products WHERE name LIKE ?", ('%' + product_name + '%',)).fetchone()
+        if product and product['image']:
+            # This is where we tell the chatbot to show the image on the frontend.
+            # We will send the image filename back in the JSON response.
+            response_message = f"Here is a photo of the {product['name']}."
+            products.append(product) # Add the product to the list to show its image
+        elif product:
+            response_message = f"Sorry, there is no image available for {product['name']}."
+        else:
+            response_message = f"I couldn't find a product named {product_name}."
+
+    # Fallback/Default response
+    else:
+        response_message = "I'm sorry, I don't understand that request. Please try asking about products or site features."
+    
+    conn.close()
+
+    return {"message": response_message, "products": [dict(p) for p in products]}
+
+
+
 # ------------------ BUY PRODUCT ------------------
 @app.route("/buy/<int:product_id>")
 def buy(product_id):
