@@ -1,0 +1,136 @@
+{% extends 'base.html' %} {% block content %}
+<style>
+  body {
+    background: linear-gradient(135deg, #74a0ff, #5a7dff);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  }
+
+  .container {
+    background-color: rgba(255, 255, 255, 0.9);
+    padding: 40px;
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    width: 100%;
+    max-width: 400px;
+    text-align: center;
+    transition: transform 0.3s ease-in-out;
+  }
+
+  .container:hover {
+    transform: scale(1.02);
+  }
+
+  h2 {
+    color: #333;
+    margin-bottom: 30px;
+    font-weight: 600;
+    font-size: 28px;
+  }
+
+  form input,
+  form select {
+    width: calc(100% - 20px);
+    padding: 12px 10px;
+    margin-bottom: 20px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    font-size: 16px;
+    transition: border-color 0.3s ease;
+  }
+
+  form input:focus,
+  form select:focus {
+    border-color: #5a7dff;
+    outline: none;
+  }
+
+  form button {
+    width: 100%;
+    padding: 15px;
+    border: none;
+    border-radius: 8px;
+    background-color: #5a7dff;
+    color: white;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+  }
+
+  form button:hover {
+    background-color: #4a6ce0;
+    transform: translateY(-2px);
+  }
+
+  .message {
+    margin-bottom: 20px;
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 14px;
+    text-align: left;
+  }
+  .message.success {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+  }
+  .message.danger {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+  }
+  .back-to-login {
+    margin-top: 15px;
+    display: block;
+    color: #5a7dff;
+    text-decoration: none;
+    font-size: 14px;
+  }
+  .back-to-login:hover {
+    text-decoration: underline;
+  }
+</style>
+<div class="container">
+  <h2>Create Your Account</h2>
+  {% with messages = get_flashed_messages(with_categories=true) %} {% if
+  messages %} {% for category, message in messages %}
+  <div class="message {{ category }}">{{ message }}</div>
+  {% endfor %} {% endif %} {% endwith %}
+  <form method="post" action="{{ url_for('signup') }}">
+    <input type="text" name="username" placeholder="Username" required />
+    <input type="email" name="email" placeholder="Email" required />
+    <input type="password" name="password" placeholder="Password" required />
+    <select name="role" required>
+      <option value="user">User</option>
+      <option value="seller">Seller</option>
+      <option value="dbmanager">DB Manager</option>
+      <option value="admin">Admin</option>
+    </select>
+    <div id="pin-field" style="display: none">
+      <input type="password" name="pin" placeholder="PIN" />
+    </div>
+    <button type="submit">Signup</button>
+  </form>
+  <a href="{{ url_for('login') }}" class="back-to-login"
+    >Already have an account? Login here</a
+  >
+</div>
+
+<script>
+  const roleSelect = document.querySelector('select[name="role"]');
+  const pinField = document.getElementById("pin-field");
+
+  roleSelect.addEventListener("change", (event) => {
+    if (event.target.value === "admin" || event.target.value === "dbmanager") {
+      pinField.style.display = "block";
+    } else {
+      pinField.style.display = "none";
+    }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,89 @@
+{% extends 'base.html' %} {% block content %}
+<div class="container">
+  <a href="{{ url_for('home') }}" class="btn back-btn">
+    <i class="fa fa-arrow-left"></i> Back to Home
+  </a>
+
+  <h2 class="mb-6 text-2xl font-bold">My Orders</h2>
+
+  <h3 class="text-xl font-semibold mt-8 mb-4">Orders I Placed</h3>
+  <div class="orders-container">
+    {% if orders %} {% for o in orders %}
+    <div class="order-card bg-white shadow-md rounded-lg p-4 mb-6">
+      <div class="order-header flex items-center gap-4">
+        <img
+          src="{{ url_for('static', filename='uploads/' ~ o['product_image']) }}"
+          alt="{{ o['product_name'] }}"
+          class="w-20 h-20 object-cover rounded-lg"
+        />
+        <h3 class="text-xl font-semibold">{{ o['product_name'] }}</h3>
+      </div>
+
+      <p class="mt-2"><strong>Order ID:</strong> #{{ o['id'] }}</p>
+      <p>
+        <strong>Price:</strong> ₹{{ o['amount'] }} ({{ o['quantity'] }} × ₹{{
+        o['unit_price'] }})
+      </p>
+      {% if o['variant'] %}
+      <p><strong>Variants:</strong> {{ o['variant'] }}</p>
+      {% endif %}
+
+      <div class="order-tracker flex items-center justify-between mt-4">
+        {% set steps = ["Payment Pending", "Processing", "Shipped", "In
+        Transit", "Delivered"] %} {% for step in steps %} {% set active = false
+        %} {% if o['status'] == step %} {% set active = true %} {% elif
+        o['status'] == "Processing" and step == "Payment Pending" %} {% set
+        active = true %} {% elif o['status'] == "Shipped" and step in ["Payment
+        Pending", "Processing"] %} {% set active = true %} {% elif o['status']
+        == "In Transit" and step in ["Payment Pending", "Processing", "Shipped"]
+        %} {% set active = true %} {% elif o['status'] == "Delivered" and step
+        in ["Payment Pending", "Processing", "Shipped", "In Transit"] %} {% set
+        active = true %} {% endif %}
+
+        <div class="flex flex-col items-center flex-1 relative">
+          <div
+            class="w-8 h-8 rounded-full flex items-center justify-center {% if active %}bg-blue-500 text-white{% else %}bg-gray-300 text-gray-600{% endif %}"
+          >
+            {% if active %}<i class="fa fa-check"></i>{% else %}<i
+              class="fa fa-circle"
+            ></i
+            >{% endif %}
+          </div>
+          <span class="text-sm mt-1">{{ step }}</span>
+
+          {% if not loop.last %}
+          <div
+            class="absolute top-4 left-1/2 w-full h-1 {% if active %}bg-blue-500{% else %}bg-gray-300{% endif %}"
+          ></div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %} {% else %}
+    <p class="text-center text-gray-500">You have no orders yet.</p>
+    {% endif %}
+  </div>
+
+  {% if seller_orders %}
+  <h3 class="text-xl font-semibold mt-8 mb-4">Orders for My Products</h3>
+  <div class="orders-container">
+    {% for o in seller_orders %}
+    <div class="order-card bg-white shadow-md rounded-lg p-4 mb-6">
+      <div class="order-header flex items-center gap-4">
+        <img
+          src="{{ url_for('static', filename='uploads/' ~ o['product_image']) }}"
+          alt="{{ o['product_name'] }}"
+          class="w-20 h-20 object-cover rounded-lg"
+        />
+        <h3 class="text-xl font-semibold">{{ o['product_name'] }}</h3>
+      </div>
+      <p class="mt-2"><strong>Buyer:</strong> {{ o['buyer_name'] }}</p>
+      <p><strong>Order ID:</strong> #{{ o['id'] }}</p>
+      <p><strong>Status:</strong> {{ o['status'] }}</p>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

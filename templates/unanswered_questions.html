@@ -1,0 +1,51 @@
+{% extends 'base.html' %} {% block content %}
+<div class="container">
+  <a href="{{ url_for('admin') }}" class="btn back-btn"
+    ><i class="fa fa-arrow-left"></i> Back to Admin</a
+  >
+  <h2>Unanswered Chatbot Questions</h2>
+  {% if questions %}
+  <table>
+    <thead>
+      <tr>
+        <th>Question</th>
+        <th>Answer</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for q in questions %}
+      <tr>
+        <td>{{ q['question'] }}</td>
+        <td>
+          <form
+            action="{{ url_for('answer_question', question_id=q['id']) }}"
+            method="post"
+          >
+            <input
+              type="text"
+              name="answer"
+              placeholder="Type the answer here..."
+              required
+            />
+            <button type="submit" class="btn">Submit Answer</button>
+          </form>
+        </td>
+        <td>
+          <form
+            action="{{ url_for('delete_question', question_id=q['id']) }}"
+            method="post"
+            onsubmit="return confirm('Are you sure you want to delete this question?');"
+          >
+            <button type="submit" class="btn btn-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No unanswered questions at the moment. All caught up! 🎉</p>
+  {% endif %}
+</div>
+{% endblock %}

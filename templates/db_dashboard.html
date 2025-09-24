@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Database & Order Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f4f7f9;
+        padding: 20px;
+      }
+    </style>
+  </head>
+  <body class="bg-gray-100 p-8">
+    <div class="max-w-6xl mx-auto bg-white p-8 rounded-xl shadow-lg">
+      <h2 class="text-3xl font-bold text-center mb-6 text-rose-500">
+        Database Manager Dashboard
+      </h2>
+
+      <p class="text-gray-600 mb-6 text-center">
+        Manage database structure and track order progress in one place.
+      </p>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+      <ul class="mb-4">
+        {% for category, message in messages %}
+        <li
+          class="p-2 rounded-md text-sm {% if category == 'error' %}bg-red-200 text-red-800{% elif category == 'query_result' %}bg-blue-200 text-blue-800{% else %}bg-green-200 text-green-800{% endif %}"
+        >
+          {{ message }}
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% endwith %}
+
+      <!-- Table Selector -->
+      <div class="dashboard-section overflow-x-auto mb-10">
+        <h3 class="text-2xl font-semibold mb-4 text-rose-500 border-b-2 border-rose-500 pb-2">
+          Database Tables
+        </h3>
+        <div class="flex flex-wrap gap-2">
+          {% for table in tables %}
+          <a
+            href="{{ url_for('db_manager', table=table.name) }}"
+            class="px-4 py-2 rounded-lg font-semibold {% if selected_table == table.name %}bg-rose-500 text-white{% else %}bg-gray-200 text-gray-700 hover:bg-gray-300{% endif %}"
+          >
+            {{ table.name }}
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Table Actions -->
+      {% if selected_table %}
+      <div class="dashboard-section mb-10">
+        <h3 class="text-2xl font-semibold mb-4 text-rose-500 border-b-2 border-rose-500 pb-2">
+          Actions for Table: <span class="text-gray-700">{{ selected_table }}</span>
+        </h3>
+
+        <!-- Add Column -->
+        <div class="bg-gray-50 p-6 rounded-lg shadow-sm mb-6">
+          <h4 class="text-xl font-bold mb-3 text-gray-700">Add a New Column</h4>
+          <form action="{{ url_for('add_column') }}" method="post" class="flex flex-col md:flex-row gap-4">
+            <input type="hidden" name="table_name" value="{{ selected_table }}" />
+            <input type="text" name="column_name" placeholder="Column Name" required class="flex-1 px-3 py-2 border rounded-lg"/>
+            <select name="column_type" class="px-3 py-2 border rounded-lg">
+              <option value="TEXT">TEXT</option>
+              <option value="INTEGER">INTEGER</option>
+              <option value="REAL">REAL</option>
+            </select>
+            <button type="submit" class="bg-blue-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-blue-600 transition-colors">
+              Add Column
+            </button>
+          </form>
+        </div>
+
+        <!-- Split Table -->
+        <div class="bg-gray-50 p-6 rounded-lg shadow-sm">
+          <h4 class="text-xl font-bold mb-3 text-gray-700">Normalize Table</h4>
+          <form action="{{ url_for('split_table') }}" method="post">
+            <input type="hidden" name="old_table_name" value="{{ selected_table }}" />
+            <div class="mb-4">
+              <label class="block text-gray-700 mb-2">New Table Name</label>
+              <input type="text" name="new_table_name" placeholder="Enter new table name" required class="w-full px-3 py-2 border rounded-lg"/>
+            </div>
+            <label class="block text-gray-700 mb-2">Select Columns to Move</label>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
+              {% for column in columns %}
+              <div class="flex items-center">
+                <input type="checkbox" id="{{ column.name }}" name="selected_columns" value="{{ column.name }}" class="h-4 w-4 text-rose-600 border-gray-300 rounded"/>
+                <label for="{{ column.name }}" class="ml-2 text-gray-700">{{ column.name }}</label>
+              </div>
+              {% endfor %}
+            </div>
+            <button type="submit" class="bg-yellow-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-yellow-600 transition-colors">
+              Split Table
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Create Table -->
+      <div class="dashboard-section mb-10">
+        <h3 class="text-2xl font-semibold mb-4 text-rose-500 border-b-2 border-rose-500 pb-2">
+          Create a New Table
+        </h3>
+        <div class="bg-gray-50 p-6 rounded-lg shadow-sm">
+          <form action="{{ url_for('create_table') }}" method="post" class="flex flex-col gap-4">
+            <div>
+              <label class="block text-gray-700 mb-2">Table Name</label>
+              <input type="text" name="table_name" placeholder="Enter new table name" required class="w-full px-3 py-2 border rounded-lg"/>
+            </div>
+            <div id="columns-container">
+              <div class="flex gap-2 mb-2">
+                <input type="text" name="column_name[]" placeholder="Column Name" required class="flex-1 px-3 py-2 border rounded-lg"/>
+                <select name="column_type[]" class="px-3 py-2 border rounded-lg">
+                  <option value="TEXT">TEXT</option>
+                  <option value="INTEGER">INTEGER</option>
+                  <option value="REAL">REAL</option>
+                  <option value="BLOB">BLOB</option>
+                </select>
+              </div>
+            </div>
+            <button type="button" onclick="addColumn()" class="bg-gray-300 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors">
+              + Add Another Column
+            </button>
+            <button type="submit" class="bg-green-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-green-600 transition-colors">
+              Create Table
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- SQL Query -->
+      <div class="dashboard-section mb-10">
+        <h3 class="text-2xl font-semibold mb-4 text-rose-500 border-b-2 border-rose-500 pb-2">
+          Execute Custom SQL Query
+        </h3>
+        <div class="bg-gray-50 p-6 rounded-lg shadow-sm">
+          <form action="{{ url_for('execute_query') }}" method="post" class="flex flex-col gap-4">
+            <textarea name="query" rows="5" placeholder="Enter SQL query (e.g., SELECT * FROM users;)" required class="w-full px-3 py-2 border rounded-lg"></textarea>
+            <button type="submit" class="bg-purple-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-purple-600 transition-colors">
+              Execute Query
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Order Management -->
+      <div class="dashboard-section">
+        <h3 class="text-2xl font-bold text-center mb-6 text-indigo-600 border-b-2 border-indigo-600 pb-2">
+          Order Management
+        </h3>
+        <div class="overflow-x-auto">
+          {% if orders %}
+          <table class="min-w-full bg-white rounded-lg shadow-md overflow-hidden">
+            <thead class="bg-gray-200">
+              <tr>
+                <th class="py-3 px-4">Order ID</th>
+                <th class="py-3 px-4">Customer</th>
+                <th class="py-3 px-4">Product</th>
+                <th class="py-3 px-4">Quantity</th>
+                <th class="py-3 px-4">Status Tracker</th>
+                <th class="py-3 px-4">Update Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for order in orders %}
+              <tr class="border-t hover:bg-gray-50">
+                <td class="py-3 px-4 font-medium">{{ order.id }}</td>
+                <td class="py-3 px-4">{{ order.customer_name }}</td>
+                <td class="py-3 px-4">{{ order.product_name }}</td>
+                <td class="py-3 px-4">{{ order.quantity }}</td>
+
+                <!-- Status Tracker -->
+                <td class="py-3 px-4">
+                  <div class="flex items-center justify-between w-full">
+                    {% set steps = ["Paid", "Shipped", "In Transit", "Delivered"] %}
+                    {% for step in steps %}
+                      {% set active = false %}
+                      {% if step == "Paid" and order.status in ['Payment Pending','Processing','Shipped','Delivered'] %}
+                        {% set active = true %}
+                      {% elif step == "Shipped" and order.status in ['Shipped','Delivered'] %}
+                        {% set active = true %}
+                      {% elif step == "In Transit" and order.status == 'Processing' %}
+                        {% set active = true %}
+                      {% elif step == "Delivered" and order.status == 'Delivered' %}
+                        {% set active = true %}
+                      {% endif %}
+                      <div class="flex flex-col items-center flex-1 relative">
+                        <div class="w-6 h-6 rounded-full flex items-center justify-center text-xs {% if active %}bg-blue-500 text-white{% else %}bg-gray-300 text-gray-700{% endif %}">
+                          {% if active %}<i class="fa fa-check"></i>{% else %}<i class="fa fa-circle"></i>{% endif %}
+                        </div>
+                        <span class="text-xs mt-1">{{ step }}</span>
+                        {% if not loop.last %}
+                        <div class="absolute top-3 left-1/2 w-full h-0.5 {% if active %}bg-blue-500{% else %}bg-gray-300{% endif %}"></div>
+                        {% endif %}
+                      </div>
+                    {% endfor %}
+                  </div>
+                </td>
+
+                <!-- Status Update Form -->
+                <td class="py-3 px-4">
+                  <form action="{{ url_for('update_order_status') }}" method="post" class="flex items-center space-x-2">
+                    <input type="hidden" name="order_id" value="{{ order.id }}">
+                    <select name="new_status" class="text-sm px-2 py-1 border rounded-lg">
+                      {% for status_option in statuses %}
+                      <option value="{{ status_option }}" {% if order.status == status_option %}selected{% endif %}>
+                        {{ status_option }}
+                      </option>
+                      {% endfor %}
+                    </select>
+                    <button type="submit" class="bg-blue-500 text-white text-sm font-bold px-3 py-1 rounded-lg hover:bg-blue-600">
+                      Update
+                    </button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <p class="text-center text-gray-500 p-4">No orders found.</p>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="flex justify-center mt-8">
+      <a href="{{ url_for('home') }}" class="bg-gray-300 text-gray-700 font-bold py-2 px-6 rounded-lg hover:bg-gray-400">
+      Back to Home
+      </a>
+     </div>
+
+    </div>
+
+    <script>
+      function addColumn() {
+        const container = document.getElementById("columns-container");
+        const newRow = document.createElement("div");
+        newRow.className = "flex gap-2 mb-2";
+        newRow.innerHTML = `
+          <input type="text" name="column_name[]" placeholder="Column Name" required class="flex-1 px-3 py-2 border rounded-lg"/>
+          <select name="column_type[]" class="px-3 py-2 border rounded-lg">
+            <option value="TEXT">TEXT</option>
+            <option value="INTEGER">INTEGER</option>
+            <option value="REAL">REAL</option>
+            <option value="BLOB">BLOB</option>
+          </select>
+          <button type="button" onclick="removeColumn(this)" class="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600">-</button>`;
+        container.appendChild(newRow);
+      }
+      function removeColumn(button) { button.parentElement.remove(); }
+    </script>
+  </body>
+</html>
