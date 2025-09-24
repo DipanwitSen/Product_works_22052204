@@ -466,16 +466,17 @@ def chat():
             else:
                 response_text = f"I couldn't find any products priced at exactly ₹{exact_price}."
         
-       # New logic for general price-based search like "products under 1000"
-        elif re.search(r'^(?:give me|show me|find|search for)?\s*products?\s+(?:under|less than|in)\s+₹?(\d+)', user_message):
-            match_general = re.search(r'^(?:give me|show me|find|search for)?\s*products?\s+(?:under|less than|in)\s+₹?(\d+)', user_message)
-            price_limit = float(match_general.group(1))
-            products_db = conn.execute("SELECT id, name, price, image_url FROM products WHERE price <= ?", (price_limit,)).fetchall()
+       # Original flexible product search (e.g., "give me apple", "find me a phone")
+        elif re.search(r'(?:give me|get me|find|show me|search for|about|product|brand)\s*(.+)', user_message):
+            search_query_raw = re.search(r'(?:give me|get me|find|show me|search for|about|product|brand)\s*(.+)', user_message).group(1).strip().replace("?","")
+            search_query = f"%{search_query_raw}%"
+            # Corrected line: 'image' is changed to 'image_url'
+            products_db = conn.execute("SELECT id, name, price, image_url FROM products WHERE name LIKE ? OR specifications LIKE ? OR variant LIKE ?",(search_query, search_query, search_query)).fetchall()
             if products_db:
-                response_text = f"Here are some products under ₹{price_limit}:"
+                response_text = f"Here's what I found for '{search_query_raw}':"
                 products = [{"id": p["id"], "name": p["name"], "price": p["price"], "image": p["image_url"]} for p in products_db]
             else:
-                response_text = f"I couldn't find any products under ₹{price_limit}."
+                response_text = f"I couldn't find any products matching '{search_query_raw}'."
 
         elif re.search(r'(.+?)\s+(?:under|in|less than|of)\s+₹?(\d+)', user_message):
             match_product_price = re.search(r'(.+?)\s+(?:under|in|less than|of)\s+₹?(\d+)', user_message)
