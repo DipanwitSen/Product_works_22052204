@@ -1,114 +1,429 @@
-<!DOCTYPE html>
+{% extends 'base.html' %} {% block title %}My Profile Card{% endblock %} {%
+block content %}
+<style>
+  /* Additional styles for the profile card to match the image */
+  .profile-card {
+    background: rgba(255, 255, 255, 0.9); /* Slightly transparent white */
+    backdrop-filter: blur(10px); /* Frosted glass effect */
+    border-radius: 2rem; /* More rounded corners */
+    overflow: hidden;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15); /* Stronger shadow */
+    max-width: 450px; /* Adjust max-width to match card style */
+    /* Removed margin-top to allow vertical centering by the flex container */
+  }
 
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Profile</title>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        background-color: #f4f4f4;
-        margin: 0;
-        padding: 0;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
-      }
-      .container {
-        background-color: #fff;
-        padding: 2rem;
-        border-radius: 8px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        width: 90%;
-        max-width: 500px;
-        text-align: center;
-      }
-      h1 {
-        color: #333;
-        margin-bottom: 1.5rem;
-      }
-      .flash-message {
-        padding: 1rem;
-        margin-bottom: 1rem;
-        border-radius: 4px;
-        text-align: left;
-      }
-      .flash-message.success {
-        background-color: #d4edda;
-        color: #155724;
-        border: 1px solid #c3e6cb;
-      }
-      .flash-message.error {
-        background-color: #f8d7da;
-        color: #721c24;
-        border: 1px solid #f5c6cb;
-      }
-      .form-group {
-        margin-bottom: 1.5rem;
-        text-align: left;
-      }
-      .form-group label {
-        display: block;
-        margin-bottom: 0.5rem;
-        color: #555;
-        font-weight: bold;
-      }
-      .form-group input {
-        width: 100%;
-        padding: 0.75rem;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        box-sizing: border-box;
-        font-size: 1rem;
-      }
-      .button {
-        width: 100%;
-        padding: 0.75rem;
-        background-color: #007bff;
-        color: #fff;
-        border: none;
-        border-radius: 4px;
-        font-size: 1.1rem;
-        cursor: pointer;
-        transition: background-color 0.3s ease;
-      }
-      .button:hover {
-        background-color: #0056b3;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <h1>Edit Profile</h1>
-      {% with messages = get_flashed_messages(with_categories=true) %} {% if
-      messages %} {% for category, message in messages %}
-      <div class="flash-message {{ category }}">{{ message }}</div>
-      {% endfor %} {% endif %} {% endwith %}
-      <form method="POST" action="{{ url_for('profile') }}">
-        <div class="form-group">
-          <label for="username">Username</label>
-          <input
-            type="text"
-            id="username"
-            name="username"
-            value="{{ user.username }}"
-            required
-          />
-        </div>
-        <div class="form-group">
-          <label for="email">Email</label>
-          <input
-            type="email"
-            id="email"
-            name="email"
-            value="{{ user.email }}"
-            required
-          />
-        </div>
-        <button type="submit" class="button">Update Profile</button>
-      </form>
+  .profile-header-bg {
+    height: 150px; /* Height for the background section */
+    background: linear-gradient(
+      135deg,
+      #f8c8d8,
+      #aed6f1
+    ); /* Soft pink to light blue gradient */
+    position: relative;
+  }
+
+  .profile-pic-container {
+    position: absolute;
+    top: 85px; /* Adjust to sit halfway on the background */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    border-radius: 50%;
+    padding: 5px; /* Border around the image */
+    background-color: white; /* White border */
+    box-shadow: 0 0 0 5px white, 0 10px 20px rgba(0, 0, 0, 0.1); /* White border with shadow */
+  }
+
+  .profile-pic {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #f8c8d8; /* Inner pink border */
+  }
+
+  .profile-info {
+    padding-top: 80px; /* Space for the profile pic */
+    text-align: center;
+    margin-bottom: 20px;
+  }
+
+  .profile-name {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: #333;
+    margin-bottom: 5px;
+  }
+
+  .profile-title {
+    font-size: 1.1rem;
+    color: #666;
+    font-weight: 400;
+    margin-bottom: 25px;
+  }
+
+  .profile-tabs-nav {
+    display: flex;
+    justify-content: space-around;
+    border-top: 1px solid #eee;
+    background-color: #fcfcfc;
+  }
+
+  .profile-tabs-nav button {
+    flex-grow: 1;
+    padding: 18px 10px;
+    border: none;
+    background: none;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #777;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    position: relative;
+  }
+
+  .profile-tabs-nav button.active {
+    color: #f8c8d8; /* Active tab color */
+  }
+
+  .profile-tabs-nav button.active::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 4px;
+    background-color: #f8c8d8; /* Active tab indicator */
+    border-radius: 2px 2px 0 0;
+  }
+
+  .tab-content {
+    padding: 30px;
+    text-align: left;
+  }
+
+  .tab-content h3 {
+    font-size: 1.6rem;
+    color: #f8c8d8;
+    margin-bottom: 20px;
+    font-weight: 600;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+  }
+
+  .detail-item {
+    margin-bottom: 15px;
+  }
+  .detail-label {
+    font-size: 0.9rem;
+    color: #888;
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+  }
+  .detail-value {
+    font-size: 1.1rem;
+    color: #333;
+    font-weight: 600;
+  }
+
+  .edit-form .form-group {
+    margin-bottom: 15px;
+  }
+  .edit-form label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: #555;
+  }
+  .edit-form input[type="text"],
+  .edit-form input[type="email"],
+  .edit-form textarea {
+    width: 100%;
+    padding: 10px 15px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: border-color 0.2s;
+  }
+  .edit-form input:focus,
+  .edit-form textarea:focus {
+    border-color: #f8c8d8;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(248, 200, 216, 0.5);
+  }
+  .edit-form .btn-group {
+    text-align: right;
+    margin-top: 30px;
+  }
+  .edit-form .btn-group button {
+    padding: 10px 25px;
+    border-radius: 25px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .edit-form .btn-group .btn-cancel {
+    background-color: #e0e0e0;
+    color: #555;
+    margin-right: 10px;
+  }
+  .edit-form .btn-group .btn-cancel:hover {
+    background-color: #d0d0d0;
+  }
+  .edit-form .btn-group .btn-save {
+    background-color: #f8c8d8;
+    color: white;
+  }
+  .edit-form .btn-group .btn-save:hover {
+    background-color: #e0b0c2;
+  }
+
+  /* Style for the file input label (camera icon) */
+  .camera-icon-overlay {
+    position: absolute;
+    bottom: 5px;
+    right: 5px;
+    background-color: #f8c8d8; /* Pink background */
+    color: white;
+    border-radius: 50%;
+    padding: 10px;
+    cursor: pointer;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    transition: background-color 0.2s ease;
+  }
+  .camera-icon-overlay:hover {
+    background-color: #e0b0c2;
+  }
+</style>
+
+<div class="flex justify-center min-h-screen items-center py-10">
+  <div class="profile-card relative mx-auto">
+    <div class="profile-header-bg"></div>
+
+    <div class="profile-pic-container">
+      <label
+        for="profile-image-upload"
+        class="camera-icon-overlay"
+        id="image-upload-label"
+        style="display: none"
+      >
+        <i class="fas fa-camera"></i>
+      </label>
+      <img
+        src="{{ url_for('static', filename='uploads/' + user.profile_image) if user.profile_image else url_for('static', filename='default_profile.png') }}"
+        alt="Profile Picture"
+        class="profile-pic"
+        id="current-profile-img"
+      />
     </div>
-  </body>
-</html>
+
+    <div class="profile-info">
+      <h1 class="profile-name">{{ user.username }}</h1>
+      <p class="profile-title">{{ user.role | capitalize }}</p>
+    </div>
+
+    <div class="profile-tabs-nav" id="profile-tabs">
+      <button class="active" data-tab="about">ABOUT</button>
+      <button data-tab="experience">EXPERIENCE</button>
+      <button data-tab="contact">CONTACT</button>
+      <button data-tab="edit">EDIT</button>
+    </div>
+
+    <div class="tab-content-wrapper">
+      <div id="tab-content-about" class="tab-content">
+        <h3>About Me</h3>
+        <p class="text-gray-700 leading-relaxed whitespace-pre-line">
+          {{ user.about_me or 'Hello! I\'m ' ~ user.username ~ ', a dedicated '
+          ~ user.role ~ ' at LocalMart. Click the EDIT tab to write a bio about
+          yourself!' }}
+        </p>
+      </div>
+
+      <div
+        id="tab-content-experience"
+        class="tab-content"
+        style="display: none"
+      >
+        <h3>Experience / Skills</h3>
+        <p class="text-gray-700 leading-relaxed whitespace-pre-line">
+          {{ user.experience_details or 'List your skills, products, or
+          professional experience here. Click the EDIT tab to update this
+          section.' }}
+        </p>
+      </div>
+
+      <div id="tab-content-contact" class="tab-content" style="display: none">
+        <h3>Contact Information</h3>
+        <div class="detail-item">
+          <span class="detail-label"
+            ><i class="fas fa-envelope mr-2 text-pink-400"></i>Email</span
+          >
+          <span class="detail-value">{{ user.email }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label"
+            ><i class="fas fa-phone mr-2 text-pink-400"></i>Phone</span
+          >
+          <span class="detail-value">{{ user.phone or 'Not Set' }}</span>
+        </div>
+        <div class="detail-item">
+          <span class="detail-label"
+            ><i class="fas fa-map-marker-alt mr-2 text-pink-400"></i
+            >Address</span
+          >
+          <span class="detail-value whitespace-pre-line"
+            >{{ user.address or 'Not Set' }}</span
+          >
+        </div>
+      </div>
+
+      <div
+        id="tab-content-edit"
+        class="tab-content edit-form"
+        style="display: none"
+      >
+        <h3>Edit Profile</h3>
+        <form
+          action="{{ url_for('profile') }}"
+          method="POST"
+          enctype="multipart/form-data"
+        >
+          <input type="hidden" name="action" value="update_profile" />
+          <input
+            type="file"
+            id="profile-image-upload"
+            name="profile_image"
+            accept="image/*"
+            style="display: none"
+            onchange="previewImage(event)"
+          />
+
+          <div class="form-group">
+            <label for="username">Username</label>
+            <input
+              type="text"
+              id="username"
+              name="username"
+              value="{{ user.username }}"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label for="email">Email</label>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              value="{{ user.email }}"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label for="phone">Phone Number</label>
+            <input
+              type="text"
+              id="phone"
+              name="phone"
+              value="{{ user.phone or '' }}"
+            />
+          </div>
+          <div class="form-group">
+            <label for="address">Shipping Address</label>
+            <textarea id="address" name="address" rows="3">
+{{ user.address or '' }}</textarea
+            >
+          </div>
+
+          <div class="form-group">
+            <label for="about_me">About Me (Bio)</label>
+            <textarea id="about_me" name="about_me" rows="4">
+{{ user.about_me or '' }}</textarea
+            >
+          </div>
+
+          <div class="form-group">
+            <label for="experience_details">Experience / Skills</label>
+            <textarea
+              id="experience_details"
+              name="experience_details"
+              rows="4"
+            >
+{{ user.experience_details or '' }}</textarea
+            >
+          </div>
+
+          <div class="btn-group">
+            <button
+              type="button"
+              class="btn-cancel"
+              onclick="switchTab('about');"
+            >
+              Cancel
+            </button>
+            <button type="submit" class="btn-save">Save Changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const tabsContainer = document.getElementById("profile-tabs");
+    const tabButtons = tabsContainer.querySelectorAll("button");
+    const tabContents = document.querySelectorAll(".tab-content");
+    const imageUploadLabel = document.getElementById("image-upload-label");
+    const currentProfileImg = document.getElementById("current-profile-img");
+
+    // Function to switch tabs
+    window.switchTab = function (activeTabId) {
+      // Deactivate all buttons and hide all content
+      tabButtons.forEach((btn) => btn.classList.remove("active"));
+      tabContents.forEach((content) => (content.style.display = "none"));
+
+      // Activate the clicked button and show its content
+      const activeButton = tabsContainer.querySelector(
+        `button[data-tab="${activeTabId}"]`
+      );
+      if (activeButton) {
+        activeButton.classList.add("active");
+      }
+      const activeContent = document.getElementById(
+        `tab-content-${activeTabId}`
+      );
+      if (activeContent) {
+        activeContent.style.display = "block";
+      }
+
+      // Show/hide camera icon based on 'edit' tab
+      if (activeTabId === "edit") {
+        imageUploadLabel.style.display = "block";
+      } else {
+        imageUploadLabel.style.display = "none";
+      }
+    };
+
+    // Event listeners for tab buttons
+    tabButtons.forEach((button) => {
+      button.addEventListener("click", function () {
+        const tabId = this.getAttribute("data-tab");
+        switchTab(tabId);
+      });
+    });
+
+    // Function to preview image before upload
+    window.previewImage = function (event) {
+      const reader = new FileReader();
+      reader.onload = function () {
+        currentProfileImg.src = reader.result;
+      };
+      reader.readAsDataURL(event.target.files[0]);
+    };
+
+    // Initialize with the 'about' tab active
+    switchTab("about");
+  });
+</script>
+{% endblock %}
