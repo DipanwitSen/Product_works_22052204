@@ -1,4 +1,109 @@
-{% extends 'base.html' %} {% block content %}
+{% extends 'base.html' %}
+{% block content %}
+<style>
+  .container {
+    max-width: 900px;
+    margin: auto;
+    padding: 20px;
+    background: #ffe6f0; /* light pink background */
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+
+  h2 {
+    color: #ff4d94; /* dark pink header */
+    text-align: center;
+    margin-bottom: 25px;
+  }
+
+  h3 {
+    color: #ff80ab;
+    margin-bottom: 15px;
+  }
+
+  .btn {
+    padding: 8px 14px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 500;
+    transition: 0.3s;
+  }
+
+  .back-btn {
+    background: #ffb6c1;
+    color: black;
+    display: inline-block;
+    margin-bottom: 20px;
+  }
+  .back-btn:hover {
+    background: #ff99b6;
+  }
+
+  .btn-primary {
+    background: #ff80ab;
+    color: white;
+    border: none;
+    cursor: pointer;
+  }
+  .btn-primary:hover {
+    background: #ff4d94;
+  }
+
+  .btn-danger {
+    background: #ff5c7a;
+    color: white;
+    border: none;
+    cursor: pointer;
+  }
+  .btn-danger:hover {
+    background: #ff1f62;
+  }
+
+  form {
+    margin-bottom: 15px;
+  }
+
+  .form-group {
+    margin-bottom: 12px;
+  }
+
+  input.form-control, textarea.form-control {
+    width: 100%;
+    padding: 8px;
+    border-radius: 6px;
+    border: 1px solid #ffb6c1;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+  }
+
+  th, td {
+    padding: 12px;
+    border: 1px solid #ffb6c1;
+    text-align: left;
+  }
+
+  th {
+    background: #ffc1e3;
+    color: #4d0033;
+  }
+
+  tbody tr:nth-child(even) {
+    background: #ffe6f0;
+  }
+
+  tbody tr:hover {
+    background: #ffd1e3;
+  }
+
+  small.form-text {
+    color: #a31f5b;
+  }
+</style>
+
 <div class="container">
   <a href="{{ url_for('admin') }}" class="btn back-btn">
     <i class="fa fa-arrow-left"></i> Back to Admin
@@ -54,7 +159,8 @@
       <button type="submit" class="btn btn-primary">Add Q&A</button>
     </form>
   </div>
-  --- {% if questions %}
+
+  {% if questions %}
   <div style="text-align: right; margin-bottom: 10px">
     <form
       action="{{ url_for('delete_all_answered_questions') }}"
@@ -64,6 +170,7 @@
       <button type="submit" class="btn btn-danger">Delete All</button>
     </form>
   </div>
+
   <table>
     <thead>
       <tr>
@@ -94,6 +201,7 @@
   <p>No answered questions found.</p>
   {% endif %}
 </div>
+
 <script>
   function toggleSqlInput() {
     var checkbox = document.getElementById("is_dynamic");
