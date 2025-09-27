@@ -1,0 +1,251 @@
+{% extends "base.html" %} {% block title %}Home - LocalMart{% endblock %} {%
+block content %}
+<div style="display: flex; gap: 20px">
+  <div style="flex: 3">
+    <h2>Products</h2>
+    <div
+      id="product-grid"
+      style="
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 20px;
+      "
+    >
+      {% for product in products %}
+      <div class="card product-card" style="padding: 15px">
+        <img
+          src="{{ product.image_url or 'https://via.placeholder.com/250' }}"
+          alt="{{ product.name }}"
+          style="width: 100%; border-radius: 8px"
+        />
+        <h4>
+          <a
+            href="{{ url_for('product_details', product_id=product.id) }}"
+            style="text-decoration: none; color: #333"
+          >
+            {{ product.name }}
+          </a>
+        </h4>
+        <p style="font-weight: 700; color: var(--primary-color)">
+          ₹{{ "{:,.2f}".format(product.price) }}
+        </p>
+
+        <div style="display: flex; gap: 10px; margin-top: 10px">
+          <button
+            class="btn btn-ghost"
+            onclick="showQuickView({{ product.id }})"
+          >
+            Quick View
+          </button>
+
+          {% if session.get('role') == 'user' %}
+          <form
+            action="{{ url_for('add_to_cart', product_id=product.id) }}"
+            method="POST"
+            style="display: inline-block"
+          >
+            <input type="hidden" name="quantity" value="1" />
+            <button type="submit" class="btn btn-primary">Add to Cart</button>
+          </form>
+
+          <a
+            href="{{ url_for('add_to_wishlist', product_id=product.id) }}"
+            class="btn btn-ghost"
+            >&#9825;</a
+          >
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %} {% if not products %}
+      <p style="text-align: center; margin-top: 50px; color: var(--muted-text)">
+        No products found. Sellers, please add some products!
+      </p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div style="flex: 1; min-width: 300px">
+    <div class="card">
+      <h2>Chatbot</h2>
+      <div
+        id="chat-window"
+        style="
+          height: 300px;
+          overflow-y: scroll;
+          border: 1px solid #ddd;
+          border-radius: 6px;
+          padding: 10px;
+          background-color: #f8f9fa;
+        "
+      >
+        <p style="color: var(--muted-text)">
+          Bot: Hello! How can I assist you with your shopping?
+        </p>
+      </div>
+      <div style="display: flex; gap: 5px">
+        <input
+          id="chat-input"
+          type="text"
+          placeholder="Ask a question..."
+          style="flex: 1; padding: 8px"
+        />
+        <button class="btn btn-primary" onclick="sendChat()">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="quick-view-modal">
+  <div id="quick-view-content">
+    <span
+      class="close-btn"
+      onclick="document.getElementById('quick-view-modal').style.display='none'"
+      >&times;</span
+    >
+    <div id="quick-view-details"></div>
+  </div>
+</div>
+{% endblock %} {% block scripts %}
+<script>
+  // NOTE: PRODUCTS still needs to be available globally for showQuickView to work.
+  let PRODUCTS = {{ products|tojson }};
+  const USER_ROLE = '{{ session.get('role') }}';
+
+  /**
+   * Appends product cards directly to the chat window.
+   */
+  function appendProductCardsToChat(products, initialMessage) {
+      PRODUCTS = products; // Update the global array for Quick View
+      const chatWindow = document.getElementById('chat-window');
+
+      // 1. Add the text message first
+      appendChat("Bot: " + initialMessage, false);
+
+      if (products.length === 0) {
+          // If no products, the text message is sufficient.
+          return;
+      }
+
+      let productHtml = '';
+      products.forEach(product => {
+          const priceFormatted = parseFloat(product.price).toFixed(2);
+          const imageSrc = product.image_url || 'https://via.placeholder.com/150';
+
+          // Generate a compact product card HTML
+          productHtml += `
+              <div class="card" style="padding: 10px; margin-bottom: 10px; border-left: 3px solid var(--primary-color); background-color: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                  <div style="display: flex; gap: 10px; align-items: center;">
+                      <img
+                          src="${imageSrc}"
+                          alt="${product.name}"
+                          style="width: 60px; height: 60px; border-radius: 4px; object-fit: cover;"
+                      />
+                      <div style="flex: 1; min-width: 0;">
+                          <h5 style="margin: 0; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                              <a href="/product/${product.id}" style="text-decoration: none; color: #333">${product.name}</a>
+                          </h5>
+                          <p style="font-weight: 700; color: var(--primary-color); font-size: 14px; margin: 2px 0;">
+                              ₹${priceFormatted}
+                          </p>
+                      </div>
+                  </div>
+                  <div style="margin-top: 10px; text-align: right;">
+                      <button class="btn btn-ghost" onclick="showQuickView(${product.id})" style="font-size: 12px; padding: 4px 8px;">
+                          View Details
+                      </button>
+                      ${USER_ROLE === 'user' ? `
+                      <a href="/cart/add/${product.id}?quantity=1" class="btn btn-primary" style="font-size: 12px; padding: 4px 8px; text-decoration: none; margin-left: 5px;">
+                          + Cart
+                      </a>` : ''}
+                  </div>
+              </div>
+          `;
+      });
+
+      // Wrap the cards in a 'Bot' message style container
+      const wrapper = document.createElement('p');
+      wrapper.style.cssText = 'text-align:left; color:#333; margin:5px 0; padding:5px 0;';
+      wrapper.innerHTML = productHtml;
+
+      chatWindow.appendChild(wrapper);
+      chatWindow.scrollTop = chatWindow.scrollHeight;
+  }
+
+  // MODIFIED showQuickView to use the dynamically updated PRODUCTS array
+  function showQuickView(id){
+    const product = PRODUCTS.find(p => p.id===id);
+    if(!product) return;
+
+    const details = document.getElementById('quick-view-details');
+    // NOTE: product.price is now a float because of the tojson filter
+    details.innerHTML = `
+      <img src="${product.image_url || 'https://via.placeholder.com/260'}" style="width:100%; border-radius:10px; margin-bottom:15px;">
+      <h3>${product.name}</h3>
+      <p style="font-weight:700; color: var(--primary-color);">₹${parseFloat(product.price).toFixed(2)}</p>
+      <p style="font-size:14px; color: var(--muted-text);">${product.specifications || 'No details provided.'}</p>
+      <p style="font-size:12px; color: var(--muted-text); margin-top:15px;">Manufacturing Area: ${product.manufacturing_area || 'Unknown'}</p>
+      <div style="margin-top:20px;">
+        <a class="btn btn-primary" href="/product/${product.id}">View Details</a>
+      </div>
+    `;
+    document.getElementById('quick-view-modal').style.display='block';
+  }
+
+  // Helper function for API calls
+  async function api(path, opts={}){
+    opts.headers=opts.headers||{"Content-Type":"application/json"};
+    const r=await fetch(path,opts);
+    if(r.ok) return r.json();
+    throw new Error(await r.text());
+  }
+
+  // MODIFIED sendChat function to use appendProductCardsToChat
+  async function sendChat(){
+    const input=document.getElementById("chat-input");
+    const q=input.value.trim();
+    if(!q) return;
+
+    // Add user message to chat
+    appendChat("You: "+q,true);
+    input.value="";
+
+    try{
+        const r=await api("/chat",{method:"POST",body:JSON.stringify({message:q})});
+
+        // CHECK if products were returned
+        if (r.products && r.products.length > 0) {
+            // Display the product cards inside the chat window
+            appendProductCardsToChat(r.products, r.message);
+        } else {
+            // Otherwise, just display the text message
+            appendChat("Bot: " + r.message, false);
+        }
+
+    }catch(e){
+        appendChat("Bot: Error contacting server.",false);
+    }
+  }
+
+  // Base function to append plain text chat bubbles
+  function appendChat(text,isUser){
+    const w=document.getElementById("chat-window");
+    const style=isUser?'text-align:right;color:#007bff;':'text-align:left;color:#333;';
+    w.innerHTML+=`<p style="${style} margin:5px 0; padding:5px 0;">${text}</p>`;
+    w.scrollTop=w.scrollHeight;
+  }
+
+  // Event Listeners
+  document.getElementById("chat-input").addEventListener("keypress",function(event){
+    if(event.key==="Enter"){
+        event.preventDefault();
+        sendChat();
+    }
+  });
+  window.onclick=function(event){
+    const modal=document.getElementById('quick-view-modal');
+    if(event.target===modal){
+        modal.style.display="none";
+    }
+  };
+</script>
+{% endblock %}
