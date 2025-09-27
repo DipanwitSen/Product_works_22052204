@@ -1,44 +1,48 @@
-{% extends 'base.html' %} {% block content %}
+{% extends 'base.html' %} 
+{% block content %}
 <div class="container">
-  <h2>Available Products</h2>
-  <div class="product-grid">
+  <h2 style="font-size: 2rem; font-weight: 700; margin-bottom: 20px; color: #ff6b81;">Available Products</h2>
+  <div class="product-grid" style="display:grid; grid-template-columns: repeat(auto-fill,minmax(280px,1fr)); gap: 25px;">
     {% for p in products %}
-    <div class="product-card">
-      <div>
+    <div class="product-card" style="background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,0.1); transition: transform 0.3s, box-shadow 0.3s;">
+      <div style="display:flex; flex-direction:column; justify-content:space-between;">
         {% if p['image'] %}
         <img
           src="{{ url_for('static', filename='uploads/' ~ p['image']) }}"
           alt="{{ p['name'] }}"
+          style="width:100%; height:200px; object-fit:cover; border-radius:8px; margin-bottom:15px; box-shadow:0 2px 8px rgba(0,0,0,0.1);"
         />
         {% endif %}
-        <h3>{{ p['name'] }}</h3>
-        <p>₹{{ p['price'] }}</p>
-        {% if p['variant'] %} {% set variant_string = p['variant'] %} {% set
-        variant_pairs = variant_string.split('|') %} {% for pair in
-        variant_pairs %} {% set parts = pair.split('=') %} {% set key =
-        parts[0]|trim %} {% set values = parts[1]|replace('{',' ')|replace('}','
-        ')|trim|split(',') %}
-        <div class="variant-group">
-          <label for="variant-{{ p['id'] }}-{{ key }}"
-            >{{ key|capitalize }}:</label
-          >
-          <select
-            name="variant-{{ key }}"
-            id="variant-{{ p['id'] }}-{{ key }}"
-            required
-            onchange="updateBuyButton({{ p['id'] }})"
-          >
-            <option value="" disabled selected>
-              -- Select {{ key|capitalize }} --
-            </option>
-            {% for value in values %}
-            <option value="{{ value|trim }}">{{ value|trim }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        {% endfor %} {% endif %}
-        <div class="quantity-control">
-          <button onclick="changeQuantity({{ p['id'] }}, -1)">-</button>
+        <h3 style="color:#333; font-size:1.5rem; margin-bottom:5px;">{{ p['name'] }}</h3>
+        <p style="color:#555; font-size:1.2rem; font-weight:600; margin-bottom:10px;">₹{{ p['price'] }}</p>
+
+        {% if p['variant'] %}
+          {% set variant_string = p['variant'] %}
+          {% set variant_pairs = variant_string.split('|') %}
+          {% for pair in variant_pairs %}
+            {% set parts = pair.split('=') %}
+            {% set key = parts[0]|trim %}
+            {% set values = parts[1]|replace('{',' ')|replace('}',' ')|trim|split(',') %}
+            <div class="variant-group" style="margin-bottom:10px;">
+              <label for="variant-{{ p['id'] }}-{{ key }}" style="font-weight:600; color:#666;">{{ key|capitalize }}:</label>
+              <select
+                name="variant-{{ key }}"
+                id="variant-{{ p['id'] }}-{{ key }}"
+                required
+                onchange="updateBuyButton({{ p['id'] }})"
+                style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd; font-size:1rem;"
+              >
+                <option value="" disabled selected>-- Select {{ key|capitalize }} --</option>
+                {% for value in values %}
+                <option value="{{ value|trim }}">{{ value|trim }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          {% endfor %}
+        {% endif %}
+
+        <div class="quantity-control" style="display:flex; justify-content:center; align-items:center; margin-bottom:15px;">
+          <button onclick="changeQuantity({{ p['id'] }}, -1)" style="background:#ff6b81; color:white; border:none; font-size:1.2rem; padding:5px 10px; border-radius:5px; cursor:pointer; margin-right:5px;">-</button>
           <input
             type="number"
             id="quantity-{{ p['id'] }}"
@@ -46,53 +50,45 @@
             min="1"
             max="{{ p['stock'] }}"
             onchange="updateBuyButton({{ p['id'] }})"
+            style="width:50px; text-align:center; border:1px solid #ccc; border-radius:5px;"
           />
-          <button onclick="changeQuantity({{ p['id'] }}, 1)">+</button>
+          <button onclick="changeQuantity({{ p['id'] }}, 1)" style="background:#ff6b81; color:white; border:none; font-size:1.2rem; padding:5px 10px; border-radius:5px; cursor:pointer; margin-left:5px;">+</button>
         </div>
-        <a id="buy-btn-{{ p['id'] }}" href="#" class="btn btn-buy disabled"
-          >Buy Now</a
-        >
+
+        <a id="buy-btn-{{ p['id'] }}" href="#" class="btn btn-buy disabled" style="display:block; text-align:center; background:#ff6b81; color:white; padding:10px 15px; border-radius:8px; font-weight:bold; text-decoration:none; transition:background 0.3s, transform 0.2s;">Buy Now</a>
       </div>
     </div>
     {% endfor %}
   </div>
 </div>
+
 <script>
   function changeQuantity(productId, change) {
     const input = document.getElementById(`quantity-${productId}`);
     let value = parseInt(input.value);
-    if (isNaN(value)) {
-      value = 1;
-    }
+    if(isNaN(value)) value = 1;
     value += change;
-    if (value < 1) {
-      value = 1;
-    }
+    if(value < 1) value = 1;
     input.value = value;
     updateBuyButton(productId);
   }
 
   function updateBuyButton(productId) {
     const buyButton = document.getElementById(`buy-btn-${productId}`);
-    const selects = document.querySelectorAll(
-      `.product-card:has(#buy-btn-${productId}) select`
-    );
+    const selects = document.querySelectorAll(`.product-card:has(#buy-btn-${productId}) select`);
     const quantityInput = document.getElementById(`quantity-${productId}`);
 
     let allVariantsSelected = true;
     let variantQuery = "";
 
     selects.forEach((select) => {
-      if (!select.value) {
-        allVariantsSelected = false;
-      } else {
-        variantQuery += `&${select.name}=${select.value}`;
-      }
+      if(!select.value) allVariantsSelected = false;
+      else variantQuery += `&${select.name}=${select.value}`;
     });
 
     const quantity = quantityInput.value;
 
-    if (allVariantsSelected && quantity > 0) {
+    if(allVariantsSelected && quantity > 0) {
       buyButton.disabled = false;
       buyButton.href = `/buy/${productId}?quantity=${quantity}${variantQuery}`;
       buyButton.classList.remove("disabled");
@@ -103,13 +99,10 @@
     }
   }
 
-  // Initial check on page load to set button state
-  window.onload = function () {
+  window.onload = function() {
     const products = document.querySelectorAll(".product-card");
     products.forEach((product) => {
-      const productId = product
-        .querySelector("a.btn-buy")
-        .id.replace("buy-btn-", "");
+      const productId = product.querySelector("a.btn-buy").id.replace("buy-btn-", "");
       updateBuyButton(productId);
     });
   };
