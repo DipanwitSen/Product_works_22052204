@@ -1,0 +1,106 @@
+{% extends "base.html" %} {% block title %}Your Cart{% endblock %} {% block
+content %}
+<div class="card" style="max-width: 900px; margin: 0 auto">
+  <h2>Your Shopping Cart</h2>
+
+  <form action="{{ url_for('checkout_selection') }}" method="POST">
+    {% if cart_items %} {% for item in cart_items %}
+    <div
+      class="cart-item"
+      style="
+        display: flex;
+        gap: 20px;
+        align-items: center;
+        padding: 15px 0;
+        border-bottom: 1px solid #eee;
+      "
+    >
+      <input
+        type="checkbox"
+        name="selected_items"
+        value="{{ item.cart_id }}"
+        style="transform: scale(1.2)"
+        checked
+      />
+
+      <img
+        src="{{ item.image_url or 'https://via.placeholder.com/80' }}"
+        alt="{{ item.name }}"
+        style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px"
+      />
+
+      <div style="flex: 1">
+        <h4 style="margin: 0">
+          <a
+            href="{{ url_for('product_details', product_id=item.id) }}"
+            style="text-decoration: none; color: #333"
+            >{{ item.name }}</a
+          >
+        </h4>
+        <p style="margin: 5px 0 0; font-size: 14px; color: var(--muted-text)">
+          Variant: {{ item.variant or 'Default' }}
+        </p>
+      </div>
+
+      <div style="width: 120px">
+        <span style="font-weight: 600"
+          >₹{{ "{:,.2f}".format(item.price) }}</span
+        >
+      </div>
+
+      <div style="width: 100px; display: flex; align-items: center; gap: 5px">
+        <a
+          href="{{ url_for('decrease_quantity', cart_id=item.cart_id) }}"
+          style="text-decoration: none; color: var(--primary-color)"
+          >-</a
+        >
+        <span style="font-weight: 600">Qty: {{ item.quantity }}</span>
+        <a
+          href="{{ url_for('increase_quantity', cart_id=item.cart_id) }}"
+          style="text-decoration: none; color: var(--primary-color)"
+          >+</a
+        >
+      </div>
+
+      <div style="width: 120px">
+        <strong style="color: var(--primary-color)"
+          >Total: ₹{{ "{:,.2f}".format(item.price * item.quantity) }}</strong
+        >
+      </div>
+
+      <a
+        href="{{ url_for('remove_from_cart', cart_id=item.cart_id) }}"
+        class="btn btn-ghost"
+        style="padding: 5px 10px; font-size: 12px; text-decoration: none"
+      >
+        Remove
+      </a>
+    </div>
+    {% endfor %}
+
+    <div style="text-align: right; margin-top: 25px">
+      <h3 style="margin: 0 0 15px">
+        Grand Total: ₹{{ "{:,.2f}".format(total) }}
+      </h3>
+      <button
+        type="submit"
+        class="btn btn-primary btn-lg"
+        style="padding: 12px 30px"
+      >
+        Proceed to Checkout
+      </button>
+    </div>
+
+    {% else %}
+    <p style="text-align: center; color: var(--muted-text)">
+      Your cart is empty.
+    </p>
+    <p style="text-align: center">
+      <a href="{{ url_for('index') }}" class="btn btn-primary"
+        >Continue Shopping</a
+      >
+    </p>
+    {% endif %}
+  </form>
+</div>
+{% endblock %}

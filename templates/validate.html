@@ -1,0 +1,11 @@
+{% extends "base.html" %} {% block title %}Validate Account{% endblock %} {%
+block content %}
+<h1>Email Verification</h1>
+<p class="lead">Enter the code sent to your email</p>
+<form method="POST" action="/validate">
+  <label>Verification Code</label>
+  <input type="text" name="otp" placeholder="123456" required />
+  <button class="btn btn-primary" type="submit">Verify</button>
+</form>
+<p class="muted"><a href="/signup" class="link">Back to signup</a></p>
+{% endblock %}

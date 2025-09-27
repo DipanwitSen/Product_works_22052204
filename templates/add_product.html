@@ -1,0 +1,93 @@
+{% extends "base.html" %} {% block title %}Add Product{% endblock %} {% block
+content %}
+<div class="auth-container">
+  <div class="card auth-card">
+    <h2 style="text-align: center">Add New Product</h2>
+    <form
+      method="post"
+      action="{{ url_for('add_product') }}"
+      enctype="multipart/form-data"
+    >
+      <div class="form-group">
+        <label for="name">Product Name</label>
+        <input
+          type="text"
+          id="name"
+          name="name"
+          placeholder="Ex: Organic Cotton T-Shirt"
+          required
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="price">Price (₹)</label>
+        <input
+          type="number"
+          id="price"
+          name="price"
+          step="0.01"
+          placeholder="Ex: 1200.50"
+          required
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="image_file">Product Image</label>
+        <input
+          type="file"
+          id="image_file"
+          name="image_file"
+          accept="image/*"
+          required
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="variant">Variants (Optional - comma separated)</label>
+        <input
+          type="text"
+          id="variant"
+          name="variant"
+          placeholder="Ex: Red, Blue, Small, Large"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="stock">Stock Quantity</label>
+        <input
+          type="number"
+          id="stock"
+          name="stock"
+          min="0"
+          placeholder="Ex: 50"
+          required
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="specifications">Specifications</label>
+        <textarea
+          id="specifications"
+          name="specifications"
+          rows="3"
+          placeholder="Ex: 100% Cotton, Machine Washable"
+        ></textarea>
+      </div>
+
+      <div class="form-group">
+        <label for="manufacturing_area">Manufacturing Area</label>
+        <input
+          type="text"
+          id="manufacturing_area"
+          name="manufacturing_area"
+          placeholder="Ex: City, State/Region"
+        />
+      </div>
+
+      <button class="btn btn-primary" style="width: 100%" type="submit">
+        Publish Product
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

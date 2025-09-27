@@ -1,0 +1,66 @@
+{% extends "base.html" %} {% block title %}Wishlist{% endblock %} {% block
+content %}
+<div class="card" style="max-width: 800px; margin: 0 auto">
+  <h2>Your Wishlist</h2>
+
+  {% if items %} {% for item in items %}
+  <div
+    class="wishlist-item"
+    style="
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      padding: 15px 0;
+      border-bottom: 1px solid #eee;
+    "
+  >
+    <img
+      src="{{ item.image_url or 'https://via.placeholder.com/80' }}"
+      alt="{{ item.name }}"
+      style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px"
+    />
+
+    <div style="flex: 1">
+      <h4 style="margin: 0">
+        <a
+          href="{{ url_for('product_details', product_id=item.id) }}"
+          style="text-decoration: none; color: #333"
+          >{{ item.name }}</a
+        >
+      </h4>
+      <p style="margin: 5px 0 0; font-weight: 700; color: var(--primary-color)">
+        ₹{{ "{:,.2f}".format(item.price) }}
+      </p>
+    </div>
+
+    <div style="display: flex; gap: 10px">
+      <form
+        action="{{ url_for('add_to_cart', product_id=item.id) }}"
+        method="POST"
+        style="margin: 0"
+      >
+        <input type="hidden" name="quantity" value="1" />
+        <input type="hidden" name="variant" value="{{ item.variant or '' }}" />
+        <button type="submit" class="btn btn-primary">Add to Cart</button>
+      </form>
+      <a
+        href="{{ url_for('remove_from_wishlist', wishlist_id=item.wishlist_id) }}"
+        class="btn btn-ghost"
+        style="text-decoration: none"
+      >
+        Remove
+      </a>
+    </div>
+  </div>
+  {% endfor %} {% else %}
+  <p style="text-align: center; color: var(--muted-text)">
+    Your wishlist is empty.
+  </p>
+  <p style="text-align: center">
+    <a href="{{ url_for('index') }}" class="btn btn-primary"
+      >Discover Products</a
+    >
+  </p>
+  {% endif %}
+</div>
+{% endblock %}

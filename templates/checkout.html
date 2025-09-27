@@ -1,0 +1,133 @@
+{% extends "base.html" %} {% block title %}Checkout{% endblock %} {% block
+content %}
+<div class="card" style="max-width: 600px; margin: 0 auto; text-align: center">
+  <h2>Finalize Your Order</h2>
+
+  <div
+    id="checkout-summary"
+    style="
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    "
+  >
+    <p style="color: var(--muted-text)">Calculating order total...</p>
+    <h3 id="total-amount-display">Total: Loading...</h3>
+  </div>
+
+  <button
+    id="rzp-button"
+    class="btn btn-primary"
+    style="width: 100%; padding: 15px; font-size: 18px"
+  >
+    Pay with Razorpay
+  </button>
+</div>
+{% endblock %} {% block scripts %}
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+<script>
+  const RAZORPAY_KEY = "{{ razorpay_key }}";
+
+  async function createRazorpayOrder() {
+    try {
+      document.getElementById("rzp-button").disabled = true;
+      document.getElementById("rzp-button").innerText = "Processing...";
+
+      // 1. Get order details from the server (total amount, Razorpay Order ID)
+      const response = await fetch("/create_order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        alert(
+          "Checkout Error: " + (errorData.error || "Could not create order.")
+        );
+        return;
+      }
+
+      const orderData = await response.json();
+
+      document.getElementById("total-amount-display").innerText = `Total: ₹${(
+        orderData.amount / 100
+      ).toFixed(2)}`;
+
+      // 2. Configure Razorpay options
+      const options = {
+        key: RAZORPAY_KEY, // Your Razorpay API Key
+        amount: orderData.amount, // Amount is in currency subunits (Paisa)
+        currency: orderData.currency,
+        name: "LocalMart Shop",
+        description: "Order Payment",
+        order_id: orderData.id,
+        handler: function (response) {
+          // 3. Handle successful payment
+          alert(
+            "Payment successful! Payment ID: " + response.razorpay_payment_id
+          );
+          // Redirect to orders page or a success page
+          window.location.href = "{{ url_for('orders') }}";
+        },
+        prefill: {
+          name: "{{ session.get('username', 'Guest') }}",
+        },
+        theme: {
+          color: "#007bff",
+        },
+      };
+
+      // 4. Open the Razorpay checkout modal
+      const rzp = new Razorpay(options);
+      rzp.on("payment.failed", function (response) {
+        alert("Payment failed: " + response.error.description);
+        // Re-enable button on failure
+        document.getElementById("rzp-button").disabled = false;
+        document.getElementById("rzp-button").innerText = "Pay with Razorpay";
+      });
+      rzp.open();
+    } catch (error) {
+      console.error("Fetch Error:", error);
+      alert("An internal error occurred during checkout.");
+    } finally {
+      // Ensure button state is reset if the payment flow doesn't complete (e.g., user closes the modal)
+      document.getElementById("rzp-button").disabled = false;
+      document.getElementById("rzp-button").innerText = "Pay with Razorpay";
+    }
+  }
+
+  // Auto-trigger the order creation when the button is clicked
+  document
+    .getElementById("rzp-button")
+    .addEventListener("click", createRazorpayOrder);
+
+  // Initial load to display the correct total before payment attempt (Optional, but good UX)
+  async function loadCartSummary() {
+    // We'll call /create_order and just get the amount without opening the modal
+    const response = await fetch("/create_order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    if (response.ok) {
+      const orderData = await response.json();
+      document.getElementById("total-amount-display").innerText = `Total: ₹${(
+        orderData.amount / 100
+      ).toFixed(2)}`;
+      document
+        .getElementById("checkout-summary")
+        .querySelector("p").style.display = "none";
+    } else {
+      document.getElementById(
+        "total-amount-display"
+      ).innerText = `Total: ₹0.00`;
+      document.getElementById("checkout-summary").querySelector("p").innerText =
+        "Cart is empty or calculation error.";
+      document.getElementById("rzp-button").disabled = true;
+    }
+  }
+
+  loadCartSummary();
+</script>
+{% endblock %}
