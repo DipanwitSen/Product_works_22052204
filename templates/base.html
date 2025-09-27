@@ -1,281 +1,231 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <title>
-      {% block title %}LocalMart | Your Community Marketplace{% endblock %}
-    </title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}LocalMart{% endblock %}</title>
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
     />
     <style>
       body {
-        font-family: "Inter", sans-serif;
-        background: #f0f8ff; /* Soft pastel blue */
+        font-family: "Segoe UI", sans-serif;
+        background: #f5f5f7;
         margin: 0;
         padding: 0;
       }
-
       header {
-        background: linear-gradient(90deg, #f472b6, #60a5fa); /* Pink to Blue gradient */
+        background: #ff6b81;
+        padding: 15px;
         color: white;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
       }
-
+      header h1 {
+        margin: 0;
+        font-size: 1.8em;
+      }
       nav a {
-        padding: 0.5rem 1rem;
-        border-radius: 9999px; /* pill shape */
-        transition: all 0.2s ease-in-out;
-        font-weight: 600;
+        margin-left: 15px;
+        color: white;
+        text-decoration: none;
+        font-weight: bold;
+        transition: text-decoration 0.2s;
       }
-
       nav a:hover {
-        background-color: rgba(255, 255, 255, 0.2);
-        transform: translateY(-1px);
+        text-decoration: underline;
       }
-
       .container {
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 1rem;
+        padding: 20px;
       }
-
-      /* Flash messages */
+      .btn {
+        background: #ff6b81;
+        color: white;
+        padding: 8px 16px;
+        text-decoration: none;
+        border-radius: 8px;
+        border: none;
+        cursor: pointer;
+        transition: background 0.3s ease-in-out, transform 0.2s;
+        font-weight: bold;
+      }
+      .btn:hover {
+        background: #ff4757;
+        transform: translateY(-2px);
+      }
       .flash {
-        padding: 12px 16px;
-        border-radius: 12px;
-        font-weight: 600;
-        margin-bottom: 12px;
+        padding: 15px;
+        margin-bottom: 20px;
+        border-radius: 8px;
+        font-weight: bold;
       }
       .flash.success {
-        background-color: #d1fae5;
-        color: #065f46;
+        background-color: #d4edda;
+        color: #155724;
       }
       .flash.warning {
-        background-color: #fef3c7;
-        color: #78350f;
-      }
-      .flash.info {
-        background-color: #bfdbfe;
-        color: #1e3a8a;
+        background-color: #fff3cd;
+        color: #856404;
       }
 
       /* Chatbot */
-      #chatbot-toggle-btn {
+      .chatbot-container {
         position: fixed;
         bottom: 20px;
         right: 20px;
-        z-index: 1000;
-        cursor: pointer;
-        padding: 15px;
-        border-radius: 50%;
-        background-color: #f472b6;
-        color: white;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-        transition: transform 0.3s;
-      }
-      #chatbot-toggle-btn:hover {
-        background-color: #ec4899;
-        transform: scale(1.05);
-      }
-
-      #chatbot-window {
-        position: fixed;
-        bottom: 80px;
-        right: 20px;
-        width: 100%;
-        max-width: 350px;
+        width: 350px;
         height: 450px;
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+        border: 1px solid #ccc;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+        border-radius: 10px;
         display: none;
         flex-direction: column;
-        overflow: hidden;
-        z-index: 999;
+        background-color: white;
+        z-index: 1000;
       }
-
-      #chat-messages {
+      .chat-header {
+        background: #ff6b81;
+        color: white;
+        padding: 10px;
+        border-top-left-radius: 10px;
+        border-top-right-radius: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .chat-header span {
+        font-weight: bold;
+      }
+      .chat-messages {
         flex-grow: 1;
-        padding: 15px;
+        padding: 10px;
         overflow-y: auto;
-        background-color: #ebf8ff;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        flex-direction: column;
       }
-
+      .chat-input-area {
+        display: flex;
+        padding: 10px;
+      }
+      #chat-input {
+        flex-grow: 1;
+        border: 1px solid #ddd;
+        border-radius: 20px;
+        padding: 5px 15px;
+        margin-right: 5px;
+      }
       .message {
-        margin-bottom: 10px;
         padding: 8px 12px;
-        border-radius: 10px;
+        border-radius: 15px;
+        margin-bottom: 10px;
         max-width: 80%;
-        word-wrap: break-word;
       }
       .user-message {
-        background-color: #60a5fa;
-        color: white;
-        margin-left: auto;
-        border-bottom-right-radius: 2px;
+        background-color: #dcf8c6;
+        align-self: flex-end;
       }
       .bot-message {
-        background-color: #e0f7fa;
-        color: #1f2937;
-        margin-right: auto;
-        border-bottom-left-radius: 2px;
-      }
-
-      #chat-send-btn {
-        background-color: #f472b6;
-        color: white;
-        border: none;
-        padding: 10px 15px;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: background-color 0.2s;
-      }
-      #chat-send-btn:hover {
-        background-color: #ec4899;
+        background-color: #f1f0f0;
+        align-self: flex-start;
       }
     </style>
   </head>
   <body>
-    <header class="p-4">
-      <div class="container flex flex-wrap justify-between items-center mx-auto">
-        <!-- Logo -->
-        <a href="{{ url_for('home') }}" class="flex items-center space-x-2">
-          <i class="fas fa-store text-2xl"></i>
-          <h1 class="text-2xl font-extrabold tracking-tight">LocalMart</h1>
+    <header>
+      <h1>
+        <a href="{{ url_for('home') }}" style="color: white; text-decoration: none">
+          LocalMart
         </a>
-
-        <!-- Navbar -->
-        <nav class="flex items-center space-x-2 sm:space-x-4">
-          <a href="{{ url_for('home') }}">Home</a>
-          <a href="{{ url_for('about') }}">About</a>
-
-          {% if 'username' in session %}
-            <a href="{{ url_for('my_orders') }}">My Orders</a>
-            {% if session.get('role') == 'seller' or session.get('role') == 'admin' %}
-              <a href="{{ url_for('add_product') }}">Add Product</a>
-              <a href="{{ url_for('seller_orders') }}">Seller Orders</a>
-            {% endif %}
-            {% if session.get('role') == 'admin' %}
-              <a href="{{ url_for('admin') }}">Admin</a>
-              <a href="{{ url_for('unanswered_questions') }}">Unanswered Qs</a>
-              <a href="{{ url_for('answered_questions') }}">Answered Qs</a>
-            {% endif %}
-            <a href="{{ url_for('logout') }}" class="bg-white text-pink-500 hover:bg-gray-100 px-3 py-1 rounded">Logout</a>
-          {% else %}
-            <a href="{{ url_for('login') }}" class="bg-white text-pink-500 hover:bg-gray-100 px-3 py-1 rounded">Login</a>
-            <a href="{{ url_for('signup') }}" class="bg-white text-pink-500 hover:bg-gray-100 px-3 py-1 rounded">Signup</a>
+      </h1>
+      <nav>
+        {% if session.get('username') %}
+          <a href="{{ url_for('home') }}">Home</a> |
+          <a href="{{ url_for('my_orders') }}">My Orders</a>
+          {% if session.get('role') in ['seller','admin'] %}
+            | <a href="{{ url_for('add_product') }}">Add Product</a>
+            | <a href="{{ url_for('seller_orders') }}">Seller Orders</a>
           {% endif %}
-        </nav>
-      </div>
+          {% if session.get('role') == 'admin' %}
+            | <a href="{{ url_for('admin') }}">Admin</a>
+            | <a href="{{ url_for('unanswered_questions') }}">Unanswered Questions</a>
+            | <a href="{{ url_for('answered_questions') }}">Answered Questions</a>
+          {% endif %}
+          | <a href="{{ url_for('logout') }}">Logout</a>
+        {% else %}
+          <a href="{{ url_for('login') }}">Login</a> |
+          <a href="{{ url_for('signup') }}">Signup</a>
+        {% endif %}
+      </nav>
     </header>
 
-    <!-- Main Content -->
-    <main class="container py-8">
-      {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-          <div class="mb-4 space-y-2">
-            {% for category, message in messages %}
-              <div class="flash {{ category }}">{{ message }}</div>
-            {% endfor %}
-          </div>
-        {% endif %}
-      {% endwith %}
-
+    <div class="container">
+      {% for message in get_flashed_messages() %}
+        <div class="flash">{{ message }}</div>
+      {% endfor %}
       {% block content %}{% endblock %}
-    </main>
+    </div>
 
-    <!-- Chatbot -->
-    {% if 'username' in session %}
-      <button id="chatbot-toggle-btn"><i class="fas fa-robot text-2xl"></i></button>
+    <div
+      style="position: fixed; bottom: 20px; right: 20px; cursor: pointer; background: #ff6b81; color: white; padding: 15px; border-radius: 50%; box-shadow: 0 4px 8px rgba(0,0,0,0.2); z-index:1001;"
+      onclick="toggleChatbot()"
+    >
+      <i class="fa fa-comment"></i>
+    </div>
 
-      <div id="chatbot-window">
-        <div class="p-3 text-lg font-bold text-white bg-pink-500 flex justify-between items-center">
-          LocalMart Assistant
-          <button id="close-chat-btn" class="text-white hover:text-gray-200 transition">
-            <i class="fas fa-times"></i>
-          </button>
-        </div>
-        <div id="chat-messages">
-          <div class="message bot-message">
-            Hi! I'm your local shopping assistant. Ask me things like "products under 500" or "I want to buy organic apples".
-          </div>
-        </div>
-        <form id="chat-input-form" class="flex p-3 gap-2">
-          <input type="text" id="chat-input" placeholder="Ask a question..." required class="flex-grow rounded-lg border px-3 py-2"/>
-          <button type="submit" id="chat-send-btn">Send</button>
-        </form>
+    <div class="chatbot-container" id="chatbot-container">
+      <div class="chat-header">
+        <span>Chatbot</span>
+        <span style="cursor:pointer" onclick="toggleChatbot()">✖</span>
       </div>
+      <div class="chat-messages" id="chat-messages"></div>
+      <div class="chat-input-area">
+        <input type="text" id="chat-input" placeholder="Ask a question..." onkeydown="if(event.key==='Enter') sendMessage()" />
+        <button class="btn" onclick="sendMessage()">Send</button>
+      </div>
+    </div>
 
-      <script>
-        const chatWindow = document.getElementById("chatbot-window");
-        const chatToggleBtn = document.getElementById("chatbot-toggle-btn");
-        const closeChatBtn = document.getElementById("close-chat-btn");
-        const chatMessages = document.getElementById("chat-messages");
-        const chatInputForm = document.getElementById("chat-input-form");
+    <script>
+      function toggleChatbot() {
+        const chatbot = document.getElementById("chatbot-container");
+        chatbot.style.display = chatbot.style.display === "flex" ? "none" : "flex";
+      }
+
+      function sendMessage() {
         const chatInput = document.getElementById("chat-input");
+        const chatMessages = document.getElementById("chat-messages");
+        const userMessage = chatInput.value.trim();
+        if(!userMessage) return;
 
-        chatToggleBtn.addEventListener("click", () => {
-          chatWindow.style.display = chatWindow.style.display === "flex" ? "none" : "flex";
-          chatInput.focus();
-        });
-        closeChatBtn.addEventListener("click", () => chatWindow.style.display = "none");
+        const userMessageDiv = document.createElement("div");
+        userMessageDiv.classList.add("message","user-message");
+        userMessageDiv.textContent = userMessage;
+        chatMessages.appendChild(userMessageDiv);
+        chatInput.value = "";
+        chatMessages.scrollTop = chatMessages.scrollHeight;
 
-        chatInputForm.addEventListener("submit", function (e) {
-          e.preventDefault();
-          const userQuery = chatInput.value.trim();
-          if (!userQuery) return;
-          addMessage(userQuery, "user-message");
-          chatInput.value = "";
-          sendQueryToBot(userQuery);
-        });
-
-        function addMessage(text, className, products = []) {
-          const messageDiv = document.createElement("div");
-          messageDiv.classList.add("message", className);
-
-          if (products.length > 0) {
-            const textNode = document.createTextNode(text);
-            messageDiv.appendChild(textNode);
-            const productList = document.createElement("ul");
-            products.forEach(product => {
-              const item = document.createElement("li");
-              if (product.image) {
-                const img = document.createElement("img");
-                img.src = `/static/uploads/${product.image}`;
-                img.alt = product.name;
-                img.style.maxWidth = "80px";
-                img.className = "rounded shadow my-1";
-                item.appendChild(img);
-              }
-              const link = document.createElement("a");
-              link.href = `/buy/${product.id}`;
-              link.innerHTML = `<strong>${product.name}</strong> - ₹${product.price}`;
-              item.appendChild(link);
-              productList.appendChild(item);
-            });
-            messageDiv.appendChild(productList);
-          } else {
-            messageDiv.textContent = text;
-          }
-
-          chatMessages.appendChild(messageDiv);
+        fetch("/chat", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({message: userMessage})
+        })
+        .then(res=>res.json())
+        .then(data=>{
+          const botDiv = document.createElement("div");
+          botDiv.classList.add("message","bot-message");
+          botDiv.textContent = data.message;
+          chatMessages.appendChild(botDiv);
           chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-
-        function sendQueryToBot(query) {
-          fetch("/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: query }),
-          })
-          .then(res => res.json())
-          .then(data => addMessage(data.message, "bot-message", data.products || []))
-          .catch(() => addMessage("Oops! Something went wrong.", "bot-message"));
-        }
-      </script>
-    {% endif %}
+        })
+        .catch(err=>{
+          console.error(err);
+          const botDiv = document.createElement("div");
+          botDiv.classList.add("message","bot-message");
+          botDiv.textContent = "Oops! Something went wrong.";
+          chatMessages.appendChild(botDiv);
+        });
+      }
+    </script>
   </body>
 </html>
