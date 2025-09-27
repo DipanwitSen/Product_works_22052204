@@ -1,1250 +1,883 @@
-# This is a full-featured Flask application for a local marketplace.
-# It includes user authentication (signup, login, logout), product management for sellers,
-# a knowledge base-driven chatbot, and an admin panel.
-
-import os, sqlite3, random
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, get_flashed_messages
+import os
+import sqlite3
+import smtplib
+import razorpay
+import requests
+import secrets
+import json
+import re
+from datetime import datetime, timedelta
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, g
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-import razorpay
-from functools import wraps
-import re
-import smtplib
 from email.mime.text import MIMEText
 
-# You MUST set these environment variables
-EMAIL_USER = os.getenv("EMAIL_USER")
-EMAIL_PASS = os.getenv("EMAIL_PASS")
-EMAIL_SERVER = os.getenv("EMAIL_SERVER", "smtp.gmail.com")
-EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
-APP_URL = os.getenv("APP_URL", "http://127.0.0.1:5000") # Your app's URL
-
-def send_email(to_email, subject, body):
-    if not EMAIL_USER or not EMAIL_PASS:
-        print("Email not configured. Skipping email sending.")
-        return
-
-    try:
-        msg = MIMEText(body)
-        msg["Subject"] = subject
-        msg["From"] = EMAIL_USER
-        msg["To"] = to_email
-
-        with smtplib.SMTP(EMAIL_SERVER, EMAIL_PORT) as server:
-            server.starttls()
-            server.login(EMAIL_USER, EMAIL_PASS)
-            server.sendmail(EMAIL_USER, to_email, msg.as_string())
-        print(f"Email sent successfully to {to_email}")
-    except Exception as e:
-        print(f"Failed to send email: {e}")
-# Initialize the Flask application
+# Flask Config
 app = Flask(__name__)
-# Set a secret key for session management, using an environment variable for security
-app.secret_key = os.environ.get("SECRET_KEY", "supersecret")
+app.secret_key = os.getenv("SECRET_KEY", "supersecret-localmart-key")
 
-# Define PINs for admin and dbmanager roles
-# IMPORTANT: In a production environment, these should be stored securely, e.g., as environment variables.
-ADMIN_PIN = "admin_super_secret_pin"
-DBMANAGER_PIN = "dbmanager_super_secret_pin"
-
-
-# This custom Jinja2 filter is added to fix a potential error when splitting strings in templates.
-@app.template_filter('split')
-def split_filter(s, separator=None):
-    if s:
-        return s.split(separator)
-    return []
-
-# Configure the upload folder for product images and ensure it exists
-UPLOAD_FOLDER = 'static/uploads'
+UPLOAD_FOLDER = 'static/images/products'
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Razorpay client (Test keys) for handling payments
-# In a production environment, these should be securely stored and not hard-coded.
-razorpay_client = razorpay.Client(auth=("rzp_test_RJbeRtchCzjRnl", "U1n6sacDbHO3CDCUstNBCs4C"))
+# Razorpay Config
+RAZORPAY_KEY = os.getenv("RAZORPAY_KEY", "rzp_test_RJbeRtchCzjRnl")
+RAZORPAY_SECRET = os.getenv("RAZORPAY_SECRET", "U1n6sacDbHO3CDCUstNBCs4C")
+razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY, RAZORPAY_SECRET))
 
-# Database configuration
-DB_NAME = 'database.db'
+# Groq LLM Config - REMOVED
 
-# ------------------ DATABASE FUNCTIONS ------------------
+# Database Setup
+DATABASE = 'localmart.db'
+
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+        db.row_factory = sqlite3.Row
+    return db
+
 def get_db_connection():
-    """Establishes and returns a connection to the SQLite database."""
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     return conn
 
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
+
 def init_db():
-    """Initializes the database schema and populates with initial data."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    # Create tables if they don't exist
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            email TEXT UNIQUE,
-            password TEXT NOT NULL,
-            role TEXT DEFAULT 'user'
-        )''')
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS password_reset_tokens (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT NOT NULL,
-            token TEXT NOT NULL UNIQUE,
-            expiry_date TIMESTAMP NOT NULL
-        );
-    """
-    )
-    # Update the products table to include all required columns
-    # Update the products table to include all required columns
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS products (
-        id INTEGER PRIMARY KEY,
-        seller_id INTEGER,
-        name TEXT NOT NULL,
-        price REAL NOT NULL,
-        image_url TEXT,
-        color TEXT,
-        size TEXT,
-        variant TEXT,
-        stock INTEGER,
-        specifications TEXT,
-        FOREIGN KEY (seller_id) REFERENCES users(id)
-    )''')
-    # Updated orders table to include 'quantity' and 'variant' columns
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS orders (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        product_id INTEGER,
-        buyer_id INTEGER,
-        seller_id INTEGER,
-        amount REAL,
-        quantity INTEGER,
-        variant TEXT,
-        status TEXT,
-        razorpay_payment_id TEXT,
-        razorpay_order_id TEXT,
-        razorpay_signature TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (product_id) REFERENCES products(id),
-        FOREIGN KEY (buyer_id) REFERENCES users(id),
-        FOREIGN KEY (seller_id) REFERENCES users(id)
-    )''')
-    # Updated table to include a new `sql_query` column
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS knowledge_base (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        question TEXT UNIQUE NOT NULL,
-        answer TEXT,
-        sql_query TEXT
-    )''')
-    
-    # Populate the knowledge base with initial questions and answers
-    cursor.execute("SELECT COUNT(*) FROM knowledge_base")
-    if cursor.fetchone()[0] == 0:
-        initial_knowledge = [
-            ("what is your return policy", "Our return policy allows returns within 30 days of purchase for a full refund or exchange.", None),
-            ("how do i contact customer support", "You can contact customer support by emailing support@localmart.com or calling our helpline at +123456789.", None),
-            ("what are your shipping options", "We offer standard and express shipping options. Standard shipping takes 5-7 business days, while express takes 2-3 business days.", None),
-            ("is cash on delivery available", "Yes, Cash on Delivery (COD) is available for eligible orders.", None),
-            ("how do i add a new product", "You can add a new product by going to the 'Add Product' page.", None),
-            ("what are your payment methods", "We accept credit/debit cards, net banking, and UPI.", None),
-            ("how do i reset my password", "Please go to the login page and click on 'Forgot Password'.", None),
-            ("how can i track my order", "You can track your order status on the 'My Orders' page.", None),
-            ("how do i apply a coupon", "You can apply a coupon code during the checkout process.", None),
-            ("i need a refund", "For a refund, please contact our customer support team with your order details.", None),
-            ("how do i report a seller", "You can report a seller by contacting our support team with the seller's name and details of the issue.", None),
-            ("how can i change profile", "You can change your profile details by going to the 'Profile' page.", None),
-            ("change profile", "You can change your profile details by going to the 'Profile' page.", None)
-        ]
-        cursor.executemany("INSERT INTO knowledge_base (question, answer, sql_query) VALUES (?,?,?)", initial_knowledge)
+    with app.app_context():
+        db = get_db()
+        cursor = db.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY,
+                username TEXT NOT NULL UNIQUE,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user'
+            );
+        ''')
 
-    # Create default users if they don't exist
-    default_users = [
-        ("admin", "admin@example.com", "admin123", "admin"),
-        ("dbmanager", "dbmanager@example.com", "dbpass123", "dbmanager"),
-        ("seller", "seller@example.com", "seller123", "seller")
-    ]
-    for username, email, password, role in default_users:
-        cursor.execute("SELECT * FROM users WHERE username=?", (username,))
-        if not cursor.fetchone():
-            cursor.execute("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)",
-                            (username, email, generate_password_hash(password), role))
-    
-    conn.commit()
-    conn.close()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS products (
+                id INTEGER PRIMARY KEY,
+                seller_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                price REAL NOT NULL,
+                image_url TEXT,
+                variant TEXT,
+                stock INTEGER NOT NULL,
+                specifications TEXT,
+                manufacturing_area TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (seller_id) REFERENCES users(id)
+            );
+        ''')
 
-# Run the database initialization on application startup
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS cart (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                quantity INTEGER NOT NULL,
+                variant TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (product_id) REFERENCES products(id)
+            );
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS wishlist (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (product_id) REFERENCES products(id),
+                UNIQUE(user_id, product_id)
+            );
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS orders (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                razorpay_order_id TEXT UNIQUE NOT NULL,
+                total_amount REAL NOT NULL,
+                status TEXT NOT NULL DEFAULT 'Pending Payment',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS order_items (
+                id INTEGER PRIMARY KEY,
+                order_id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                price REAL NOT NULL,
+                quantity INTEGER NOT NULL,
+                variant TEXT,
+                image_url TEXT,
+                FOREIGN KEY (order_id) REFERENCES orders(id),
+                FOREIGN KEY (product_id) REFERENCES products(id)
+            );
+        ''')
+
+        db.commit()
+
 init_db()
 
-# ------------------ AUTHENTICATION DECORATORS ------------------
+# Helper Functions
+
 def login_required(f):
-    """Decorator to ensure a user is logged in before accessing a route."""
+    from functools import wraps
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
-            flash("Please log in to access this page.", "warning")
+            flash("You need to log in to access this page.", 'error')
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
 
-def role_required(roles):
-    """
-    Decorator to restrict access to a route based on a user's role(s).
-    `roles` can be a single string or a list of strings.
-    """
-    if not isinstance(roles, list):
-        roles = [roles]
-        
-    def decorator(f):
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            if 'role' not in session or session['role'] not in roles:
-                flash("You don't have permission to access that page.", "danger")
-                return redirect(url_for('home'))
-            return f(*args, **kwargs)
-        return decorated_function
-    return decorator
+def seller_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if session.get('role') != 'seller':
+            flash("You do not have permission to access this page.", 'error')
+            return redirect(url_for('index'))
+        return f(*args, **kwargs)
+    return decorated_function
 
+def get_user_cart_items(user_id):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('''
+        SELECT 
+            c.id as cart_id, 
+            c.product_id as id, 
+            c.quantity, 
+            c.variant,
+            p.name, 
+            p.price, 
+            p.image_url
+        FROM cart c
+        JOIN products p ON c.product_id = p.id
+        WHERE c.user_id = ?;
+    ''', (user_id,))
+    return cursor.fetchall()
 
-# ------------------ AUTHENTICATION ROUTES ------------------
+# Routes: Authentication
 
-@app.route("/signup", methods=["GET", "POST"])
-def signup():
-    """Handles user signup."""
-    if request.method == "POST":
-        username = request.form["username"]
-        email = request.form["email"]
-        password = generate_password_hash(request.form["password"])
-        role = request.form["role"]
-        pin = request.form.get("pin")
-
-        # Check for PIN if role is admin or dbmanager
-        if role == 'admin' and pin != ADMIN_PIN:
-            flash("Incorrect PIN for Admin signup.", "danger")
-            return redirect(url_for("signup"))
-        if role == 'dbmanager' and pin != DBMANAGER_PIN:
-            flash("Incorrect PIN for DB Manager signup.", "danger")
-            return redirect(url_for("signup"))
-
-        conn = get_db_connection()
-        try:
-            conn.execute("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)",
-                         (username, email, password, role))
-            conn.commit()
-            flash("Signup successful! Please log in.", "success")
-            return redirect(url_for("login"))
-        except sqlite3.IntegrityError:
-            flash("Username or email already exists!", "danger")
-        finally:
-            conn.close()
-            
-    return render_template("signup.html")
-
-
-@app.route("/login", methods=["GET", "POST"])
+@app.route('/login', methods=['GET', 'POST'])
 def login():
-    """Handles user login and redirects based on role."""
-    if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
-        conn = get_db_connection()
-        user = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
-        conn.close()
-        if user and check_password_hash(user["password"], password):
-            session["user_id"] = user["id"]
-            session["username"] = user["username"]
-            session["role"] = user["role"]
-            flash("Logged in successfully!", "success")
-            
-            # Redirect based on user role
-            if user["role"] == 'admin':
-                return redirect(url_for("admin"))
-            elif user["role"] == 'dbmanager':
-                return redirect(url_for("db_manager"))
-            elif user["role"] == 'seller':
-                return redirect(url_for("seller_orders"))
-            else:
-                return redirect(url_for("home"))
+    if 'user_id' in session:
+        return redirect(url_for('index'))
+    
+    if request.method == 'POST':
+        email = request.form['email']
+        password = request.form['password']
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+
+        user = cursor.fetchone()
+        
+        if user and check_password_hash(user['password_hash'], password):
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            session['role'] = user['role']
+            flash(f"Welcome back, {user['username']}!", 'success')
+            return redirect(url_for('index'))
         else:
-            flash("Invalid username or password!", "danger")
-    return render_template("login.html")
-
-@app.route("/logout")
-def logout():
-    """Logs the user out and clears the session."""
-    session.clear()
-    flash("Logged out successfully!", "success")
-    return redirect(url_for("login"))
-
-import uuid
-import datetime
-
-@app.route("/forgot", methods=["GET", "POST"])
-def forgot():
-    """Handles the forgot password request."""
-    if request.method == "POST":
-        email = request.form.get("email")
-        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
-            flash("Invalid email address.", "danger")
-            return redirect(url_for("forgot"))
-
-        conn = get_db_connection()
-        user = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-
-        if user:
-            # Generate a unique, time-limited token
-            token = str(uuid.uuid4())
-            expiry = datetime.datetime.now() + datetime.timedelta(hours=1)
+            flash("Invalid username or password.", 'error')
             
-            # Store the token in the database
-            conn.execute(
-                "INSERT INTO password_reset_tokens (email, token, expiry_date) VALUES (?, ?, ?)",
-                (email, token, expiry),
+    return render_template('login.html')
+
+@app.route('/signup', methods=['GET', 'POST'])
+def signup():
+    if 'user_id' in session:
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        username = request.form['username']
+        email = request.form['email']
+        password = request.form['password']
+        role = request.form.get('role', 'user')
+        
+        db = get_db()
+        cursor = db.cursor()
+        
+        try:
+            password_hash = generate_password_hash(password)
+            cursor.execute(
+                "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)",
+                (username, email, password_hash, role)
             )
-            conn.commit()
-            conn.close()
+            db.commit()
+            flash("Account created successfully! Please log in.", 'success')
+            return redirect(url_for('login'))
+        except sqlite3.IntegrityError:
+            flash("Username or email already exists.", 'error')
+            
+    return render_template('signup.html')
 
-            # Create the reset link and send the email
-            reset_link = f"{APP_URL}/reset?token={token}"
-            body = f"Hello,\n\nTo reset your password, click on the following link: {reset_link}\n\nThis link will expire in one hour.\n\nIf you did not request a password reset, please ignore this email.\n\nThank you,\nYour App Team"
-            send_email(email, "Password Reset Request", body)
-            flash("A password reset link has been sent to your email.", "success")
+@app.route('/logout')
+@login_required
+def logout():
+    session.clear()
+    flash("You have been logged out.", 'success')
+    return redirect(url_for('index'))
+
+# Routes: Products
+
+@app.route('/')
+def index():
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM products ORDER BY created_at DESC")
+    products = cursor.fetchall()
+
+    products = [dict(row) for row in products]
+
+    return render_template('home.html', products=products)
+
+
+@app.route('/product/<int:product_id>')
+def product_details(product_id):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM products WHERE id = ?", (product_id,))
+    product = cursor.fetchone()
+    
+    if not product:
+        flash("Product not found.", 'error')
+        return redirect(url_for('index'))
+    
+    product_dict = dict(product)
+    product_dict['variants'] = [v.strip() for v in product_dict['variant'].split(',') if v.strip()] if product_dict['variant'] else []
+    
+    return render_template('product_details.html', product=product_dict)
+
+@app.route('/add_product', methods=['GET', 'POST'])
+@login_required
+@seller_required
+def add_product():
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        price_str = request.form.get('price', '0').strip()
+        description = request.form.get('description', '').strip()
+        variant = request.form.get('variant', '').strip()
+        stock_str = request.form.get('stock', '0').strip()
+        specifications = request.form.get('specifications', '').strip()
+        manufacturing_area = request.form.get('manufacturing_area', '').strip()
+
+        try:
+            price = float(price_str)
+        except ValueError:
+            price = 0.0
+        try:
+            stock = int(stock_str)
+        except ValueError:
+            stock = 0
+
+        image_file = request.files.get('image_file')
+        image_url = None
+
+        if image_file and image_file.filename:
+            filename = secure_filename(image_file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            image_file.save(filepath)
+            image_url = url_for('static', filename=f'images/products/{filename}')
         else:
-            flash("Email not found. Please check the address.", "danger")
-        return redirect(url_for("forgot"))
+            image_url = 'https://via.placeholder.com/400x300.png?text=No+Image'
 
-    return render_template("forgot.html")
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('''
+            INSERT INTO products (seller_id, name, description, price, image_url, variant, stock, specifications, manufacturing_area)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (session['user_id'], name, description, price, image_url, variant, stock, specifications, manufacturing_area))
+        db.commit()
 
-@app.route("/reset", methods=["GET", "POST"])
-def reset():
-    """Handles the password reset form using a token."""
-    token = request.args.get("token")
-    if not token:
-        flash("Invalid or missing token.", "danger")
-        return redirect(url_for("login"))
+        flash(f"Product '{name}' added successfully!", 'success')
+        return redirect(url_for('index'))
 
+    return render_template('add_product.html')
+
+
+# Routes: Cart & Wishlist
+
+@app.route('/add_to_cart/<int:product_id>', methods=['POST'])
+@login_required
+def add_to_cart(product_id):
+    quantity = int(request.form.get('quantity', 1))
     conn = get_db_connection()
-    token_data = conn.execute(
-        "SELECT * FROM password_reset_tokens WHERE token = ? AND expiry_date > ?",
-        (token, datetime.datetime.now()),
-    ).fetchone()
+    try:
+        product = conn.execute("SELECT stock, name FROM products WHERE id = ?", (product_id,)).fetchone()
+        if not product or product['stock'] < quantity:
+            flash(f"Failed to add to cart: Not enough stock for {product['name']}.", 'danger')
+            return redirect(url_for('product_details', product_id=product_id))
 
-    if not token_data:
-        flash("Token is invalid or has expired.", "danger")
-        conn.close()
-        return redirect(url_for("forgot"))
+        existing_item = conn.execute(
+            "SELECT id, quantity FROM cart WHERE user_id = ? AND product_id = ?",
+            (session['user_id'], product_id)
+        ).fetchone()
 
-    if request.method == "POST":
-        new_password = request.form.get("password")
-        confirm_password = request.form.get("confirm_password")
+        if existing_item:
+            new_quantity = existing_item['quantity'] + quantity
+            if new_quantity > product['stock']:
+                flash(f"Cannot add more. Total requested quantity ({new_quantity}) exceeds available stock ({product['stock']}).", 'warning')
+                return redirect(url_for('product_details', product_id=product_id))
 
-        if new_password != confirm_password:
-            flash("Passwords do not match.", "danger")
-            conn.close()
-            return redirect(url_for("reset", token=token))
-
-        # Update the user's password and delete the token
-        hashed_password = generate_password_hash(new_password)
-        conn.execute(
-            "UPDATE users SET password = ? WHERE email = ?",
-            (hashed_password, token_data["email"]),
-        )
-        conn.execute(
-            "DELETE FROM password_reset_tokens WHERE token = ?", (token,)
-        )
+            conn.execute(
+                "UPDATE cart SET quantity = ? WHERE id = ?",
+                (new_quantity, existing_item['id'])
+            )
+        else:
+            conn.execute(
+                "INSERT INTO cart (user_id, product_id, quantity) VALUES (?, ?, ?)",
+                (session['user_id'], product_id, quantity)
+            )
         conn.commit()
+        flash(f'Added {quantity}x {product["name"]} to cart!', 'success')
+    except Exception as e:
+        conn.rollback()
+        flash(f'An error occurred: {e}', 'danger')
+    finally:
         conn.close()
+    return redirect(url_for('cart'))
 
-        flash("Your password has been reset successfully. Please log in.", "success")
-        return redirect(url_for("login"))
-
-    conn.close()
-    return render_template("reset.html", token=token)
-# ------------------ CORE APPLICATION ROUTES ------------------
-@app.route("/")
-@app.route("/home")
-def home():
-    """Displays the home page with a list of all products."""
+@app.route('/cart')
+@login_required
+def cart():
     conn = get_db_connection()
-    products = conn.execute("SELECT * FROM products").fetchall()
-    conn.close()
-    return render_template("home.html", products=products)
+    cart_items = conn.execute(
+        """
+        SELECT c.id AS cart_id, p.id, p.name, p.price, c.quantity, p.image_url, p.stock
+        FROM cart c
+        JOIN products p ON c.product_id = p.id
+        WHERE c.user_id = ?
+        """,
+        (session['user_id'],)
+    ).fetchall()
 
-# ------------------ CHATBOT ROUTE ------------------
-@app.route("/chat", methods=["POST"])
-def chat():
-    """Handles user messages and provides chatbot responses."""
-    user_message = request.json.get("message").lower().strip()
+    total = sum(item['price'] * item['quantity'] for item in cart_items)
+    conn.close()
+    return render_template('cart.html', cart_items=cart_items, total=total)
+
+@app.route('/remove_from_cart/<int:cart_id>')
+@login_required
+def remove_from_cart(cart_id):
     conn = get_db_connection()
-    response_text = "I'm sorry, I don't have an answer for that. An administrator will review your question shortly."
-    products = None
-    role = session.get('role', 'guest')
+    conn.execute('DELETE FROM cart WHERE id = ? AND user_id = ?', (cart_id, session['user_id']))
+    conn.commit()
+    conn.close()
+    flash('Item removed from cart.', 'info')
+    return redirect(url_for('cart'))
+
+@app.route('/increase_quantity/<int:cart_id>')
+@login_required
+def increase_quantity(cart_id):
+    conn = get_db_connection()
+    try:
+        item = conn.execute(
+            """
+            SELECT c.quantity, p.stock, p.name, p.id
+            FROM cart c JOIN products p ON c.product_id = p.id
+            WHERE c.id = ? AND c.user_id = ?
+            """,
+            (cart_id, session['user_id'])
+        ).fetchone()
+
+        if item:
+            new_quantity = item['quantity'] + 1
+            if new_quantity <= item['stock']:
+                conn.execute('UPDATE cart SET quantity = ? WHERE id = ?', (new_quantity, cart_id))
+                conn.commit()
+                flash(f'Increased quantity of {item["name"]}.', 'success')
+            else:
+                flash(f'Cannot increase quantity. Max stock for {item["name"]} reached ({item["stock"]}).', 'warning')
+        else:
+            flash('Cart item not found.', 'danger')
+    except Exception as e:
+        conn.rollback()
+        flash(f'An error occurred: {e}', 'danger')
+    finally:
+        conn.close()
+    return redirect(url_for('cart'))
+
+@app.route('/decrease_quantity/<int:cart_id>')
+@login_required
+def decrease_quantity(cart_id):
+    conn = get_db_connection()
+    try:
+        item = conn.execute('SELECT quantity, name FROM cart WHERE id = ? AND user_id = ?', (cart_id, session['user_id'])).fetchone()
+
+        if item:
+            new_quantity = item['quantity'] - 1
+            if new_quantity >= 1:
+                conn.execute('UPDATE cart SET quantity = ? WHERE id = ?', (new_quantity, cart_id))
+                flash(f'Decreased quantity of {item["name"]}.', 'success')
+            else:
+                conn.execute('DELETE FROM cart WHERE id = ?', (cart_id,))
+                flash(f'Removed {item["name"]} from cart.', 'info')
+            conn.commit()
+        else:
+            flash('Cart item not found.', 'danger')
+    except Exception as e:
+        conn.rollback()
+        flash(f'An error occurred: {e}', 'danger')
+    finally:
+        conn.close()
+    return redirect(url_for('cart'))
+
+
+@app.route('/wishlist')
+@login_required
+def wishlist():
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('''
+        SELECT 
+            w.id as wishlist_id, 
+            p.id, 
+            p.name, 
+            p.price, 
+            p.image_url, 
+            p.variant
+        FROM wishlist w
+        JOIN products p ON w.product_id = p.id
+        WHERE w.user_id = ?;
+    ''', (session['user_id'],))
+    items = cursor.fetchall()
+    return render_template('wishlist.html', items=items)
+
+@app.route('/add_to_wishlist/<int:product_id>')
+@login_required
+def add_to_wishlist(product_id):
+    db = get_db()
+    cursor = db.cursor()
+    user_id = session['user_id']
     
     try:
-        # Check for simple greetings
+        cursor.execute('''
+            INSERT INTO wishlist (user_id, product_id) VALUES (?, ?)
+        ''', (user_id, product_id))
+        db.commit()
+        flash("Product added to wishlist.", 'success')
+    except sqlite3.IntegrityError:
+        flash("Product is already in your wishlist.", 'info')
+        
+    return redirect(url_for('product_details', product_id=product_id))
+
+@app.route('/remove_from_wishlist/<int:wishlist_id>')
+@login_required
+def remove_from_wishlist(wishlist_id):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("DELETE FROM wishlist WHERE id = ? AND user_id = ?", (wishlist_id, session['user_id']))
+    db.commit()
+    flash("Item removed from wishlist.", 'info')
+    return redirect(url_for('wishlist'))
+
+# Routes: Razorpay Checkout & Orders
+@app.route('/checkout_selection', methods=['POST'])
+@login_required
+def checkout_selection():
+    selected_cart_ids = request.form.getlist('selected_items')
+
+    if not selected_cart_ids:
+        flash('Please select at least one item to proceed to checkout.', 'warning')
+        return redirect(url_for('cart'))
+    session['checkout_cart_ids'] = selected_cart_ids
+
+    return redirect(url_for('checkout'))
+
+
+@app.route('/checkout')
+@login_required
+def checkout():
+    # Placeholder for a proper checkout rendering, using session data
+    selected_cart_ids = session.get('checkout_cart_ids', [])
+    if not selected_cart_ids:
+        flash("No items selected for checkout. Please select items in your cart.", 'error')
+        return redirect(url_for('cart'))
+    
+    db = get_db()
+    user_id = session['user_id']
+    placeholders = ','.join('?' for _ in selected_cart_ids)
+    
+    cursor = db.cursor()
+    cursor.execute(f'''
+        SELECT 
+            c.id as cart_id, 
+            c.product_id, 
+            c.quantity, 
+            c.variant,
+            p.name, 
+            p.price, 
+            p.image_url
+        FROM cart c
+        JOIN products p ON c.product_id = p.id
+        WHERE c.user_id = ? AND c.id IN ({placeholders});
+    ''', (user_id, *selected_cart_ids))
+    cart_items = cursor.fetchall()
+    
+    if not cart_items:
+        flash("Selected cart items not found or cart is empty.", 'error')
+        return redirect(url_for('cart'))
+
+    total_amount = sum(item['price'] * item['quantity'] for item in cart_items)
+
+    return render_template('checkout.html', cart_items=cart_items, total=total_amount, razorpay_key=RAZORPAY_KEY)
+
+@app.route('/create_order', methods=['POST'])
+@login_required
+def create_order():
+    db = get_db()
+    user_id = session['user_id']
+    
+    selected_cart_ids = session.get('checkout_cart_ids', [])
+    if not selected_cart_ids:
+        return jsonify({"error": "No items selected"}), 400
+
+    placeholders = ','.join('?' for _ in selected_cart_ids)
+    
+    cursor = db.cursor()
+    cursor.execute(f'''
+        SELECT 
+            c.id as cart_id, 
+            c.product_id, 
+            c.quantity, 
+            c.variant,
+            p.name, 
+            p.price, 
+            p.image_url
+        FROM cart c
+        JOIN products p ON c.product_id = p.id
+        WHERE c.user_id = ? AND c.id IN ({placeholders});
+    ''', (user_id, *selected_cart_ids))
+    cart_items = cursor.fetchall()
+    
+    if not cart_items:
+        return jsonify({"error": "Selected cart items not found or cart is empty"}), 404
+
+    total_amount_paise = int(sum(item['price'] * item['quantity'] * 100 for item in cart_items))
+    
+    if total_amount_paise == 0:
+         return jsonify({"error": "Total amount is zero"}), 400
+
+    try:
+        razorpay_order = razorpay_client.order.create({
+            'amount': total_amount_paise,
+            'currency': 'INR',
+            'receipt': f'order_rcptid_{user_id}_{secrets.token_hex(4)}',
+            'payment_capture': '1'
+        })
+        razorpay_order_id = razorpay_order['id']
+
+        cursor.execute('''
+            INSERT INTO orders (user_id, razorpay_order_id, total_amount, status)
+            VALUES (?, ?, ?, 'Pending Payment')
+        ''', (user_id, razorpay_order_id, total_amount_paise / 100))
+        order_id = cursor.lastrowid
+        
+        for item in cart_items:
+            cursor.execute('''
+                INSERT INTO order_items (order_id, product_id, name, price, quantity, variant, image_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (order_id, item['product_id'], item['name'], item['price'], item['quantity'], item['variant'], item['image_url']))
+            
+        db.commit()
+
+        return jsonify({
+            "order_id": razorpay_order_id,
+            "amount": total_amount_paise,
+            "currency": "INR",
+            "name": session.get('username', 'LocalMart Customer'),
+            "email": "user@example.com",
+            "contact": "9876543210"
+        })
+
+    except Exception as e:
+        db.rollback()
+        print(f"Razorpay Order Creation Error: {e}")
+        return jsonify({"error": f"Failed to create Razorpay order: {e}"}), 500
+
+
+@app.route('/payment_success', methods=['POST'])
+@login_required
+def payment_success():
+    db = get_db()
+    user_id = session['user_id']
+    data = request.json
+    
+    razorpay_order_id = data.get('razorpay_order_id')
+    razorpay_payment_id = data.get('razorpay_payment_id')
+    razorpay_signature = data.get('razorpay_signature')
+    
+    if not all([razorpay_order_id, razorpay_payment_id, razorpay_signature]):
+        return jsonify({"status": "error", "message": "Missing payment data."}), 400
+
+    try:
+        params_dict = {
+            'razorpay_order_id': razorpay_order_id,
+            'razorpay_payment_id': razorpay_payment_id,
+            'razorpay_signature': razorpay_signature
+        }
+        
+        razorpay_client.utility.verify_payment_signature(params_dict)
+
+        cursor = db.cursor()
+        cursor.execute('''
+            UPDATE orders 
+            SET status = 'Paid' 
+            WHERE razorpay_order_id = ? AND user_id = ? AND status = 'Pending Payment'
+        ''', (razorpay_order_id, user_id))
+        
+        if cursor.rowcount == 0:
+            db.rollback()
+            return jsonify({"status": "error", "message": "Order not found or already processed."}), 404
+            
+        selected_cart_ids = session.pop('checkout_cart_ids', [])
+        if selected_cart_ids:
+            placeholders = ','.join('?' for _ in selected_cart_ids)
+            cursor.execute(f"DELETE FROM cart WHERE user_id = ? AND id IN ({placeholders})", 
+                           (user_id, *selected_cart_ids))
+
+        db.commit()
+        
+        flash("Payment successful! Your order has been placed.", 'success')
+        return jsonify({"status": "success", "order_id": razorpay_order_id})
+
+    except Exception as e:
+        db.rollback()
+        print(f"Payment Verification Error: {e}")
+        flash("Payment verification failed. Please contact support with your payment ID.", 'error')
+        return jsonify({"status": "failure", "message": f"Payment verification failed: {e}"}), 400
+
+@app.route('/orders')
+@login_required
+def orders():
+    db = get_db()
+    cursor = db.cursor()
+    
+    cursor.execute('''
+        SELECT 
+            oi.order_id as id,
+            oi.name,
+            oi.product_id,
+            oi.price * oi.quantity as amount,
+            oi.quantity,
+            oi.variant,
+            oi.image_url,
+            o.created_at,
+            o.status
+        FROM order_items oi
+        JOIN orders o ON oi.order_id = o.id
+        WHERE o.user_id = ?
+        ORDER BY o.created_at DESC;
+    ''', (session['user_id'],))
+    
+    orders = cursor.fetchall()
+    return render_template('orders.html', orders=orders)
+
+
+# Routes: Chatbot API
+
+@app.route("/chat", methods=["POST"])
+def chat():
+    """Handles user messages and provides chatbot responses with priority on DB search."""
+    user_message = request.json.get("message", "").strip()
+    db = get_db()
+    # Default fallback message
+    response_text = "I'm sorry, I don't have an answer for that."
+    products = None
+    role = session.get('role', 'guest')
+    user_id = session.get('user_id')
+    try:
+        cursor = db.cursor()
+        
+        # 1. Simple hardcoded responses (Greeting)
         greetings = ["hi", "hello", "hey", "hola", "namaste"]
-        if any(greeting in user_message for greeting in greetings):
-            return jsonify({"message": "Hello! How can I help you today? You can ask me about our products, or if you're a seller, you can ask about your store's performance."})
-        
-        # New logic to find a dynamic answer first
-        dynamic_answer_from_kb = conn.execute("SELECT answer, sql_query FROM knowledge_base WHERE ? LIKE '%' || question || '%' AND sql_query IS NOT NULL", (user_message,)).fetchone()
-        if dynamic_answer_from_kb:
-            answer_template = dynamic_answer_from_kb['answer']
-            sql_query = dynamic_answer_from_kb['sql_query']
+        if any(g in user_message.lower() for g in greetings):
+            return jsonify({"message": "Hello! How can I help you today? You can ask me about our products, or if you're a seller, you can ask about your stock."})
+
+        # 6. Seller-specific commands (only if logged in as a seller)
+        if role == 'seller':
+            # Seller: Check Stock
+            if "check stock" in user_message.lower() or "stock levels" in user_message.lower():
+                cursor.execute("SELECT name, stock FROM products WHERE seller_id = ?", (user_id,))
+                stock_levels = cursor.fetchall()
+                if stock_levels:
+                    stock_list = [f"{p['name']}: {p['stock']}" for p in stock_levels]
+                    response_text = "Here are your current stock levels:\n" + "\n".join(stock_list)
+                else:
+                    response_text = "You do not have any products listed yet in your store."
+                return jsonify({"message": response_text})
             
-            # Extract keyword from user message if the query has a placeholder
-            match = re.search(r'(.+?)\s+(?:under|in|less than)\s+₹?(\d+)', user_message)
-            keyword = ''
-            if match:
-                keyword = re.sub(r'^(?:give me|get me|find|show me|search for|about|product|brand|a)\s*', '', match.group(1)).strip()
-
-            if keyword and '%s' in sql_query:
-                data_result = conn.execute(sql_query, (f'%{keyword}%',)).fetchall()
-            else:
-                data_result = conn.execute(sql_query).fetchall()
-
-            if data_result:
-                # Format the data into a string to insert into the answer template
-                formatted_data = ""
-                if 'PRODUCT_LIST' in answer_template:
-                    formatted_data = ", ".join([f"{row['name']} at ₹{row['price']}" for row in data_result])
-                elif 'ORDER_STATUS' in answer_template:
-                    formatted_data = ", ".join([f"Order #{row['id']}: {row['status']}" for row in data_result])
-                elif 'STOCK_LEVELS' in answer_template:
-                    formatted_data = ", ".join([f"{row['name']}: {row['stock']}" for row in data_result])
-
-                response_text = answer_template.replace("PRODUCT_LIST", formatted_data).replace("ORDER_STATUS", formatted_data).replace("STOCK_LEVELS", formatted_data)
-                
-                # Check if it's a product list query and include product details
-                if 'products' in sql_query:
-                    products = [{"id": p["id"], "name": p["name"], "price": p["price"], "image": p["image"]} for p in data_result]
-
-            else:
-                response_text = "I couldn't find any information for that."
+            # Seller: Pending Orders
+            elif "pending orders" in user_message.lower():
+                # Simplified query to show order count
+                cursor.execute("""
+                    SELECT count(DISTINCT o.id) as order_count FROM orders o 
+                    JOIN order_items oi ON o.id = oi.order_id
+                    JOIN products p ON oi.product_id = p.id
+                    WHERE p.seller_id = ? AND o.status = 'Paid'
+                """, (user_id,))
+                count = cursor.fetchone()['order_count']
+                response_text = f"You have {count} pending orders waiting for fulfillment."
+                return jsonify({"message": response_text})
             
-            return jsonify({"message": response_text, "products": products})
-
-        # First, try to find a direct answer in the knowledge base
-        answer_from_kb = conn.execute("SELECT answer FROM knowledge_base WHERE ? LIKE '%' || question || '%' AND sql_query IS NULL", (user_message,)).fetchone()
-        if answer_from_kb and answer_from_kb['answer']:
-            return jsonify({"message": answer_from_kb['answer']})
-
-        # --- Dynamic Product and Order Queries ---
-        
-        # New logic to handle "show me all products"
-        if "show me all products" in user_message or "view all products" in user_message:
-            products_db = conn.execute("SELECT id, name, price, image FROM products").fetchall()
-            if products_db:
-                response_text = "Here are all the products we have:"
-                products = [{"id": p["id"], "name": p["name"], "price": p["price"], "image": p["image"]} for p in products_db]
-            else:
-                response_text = "There are no products available at the moment."
-
-        # New logic for "products in range"
-        elif re.search(r'₹?(\d+)\s+to\s+₹?(\d+)', user_message):
-            match_range = re.search(r'₹?(\d+)\s+to\s+₹?(\d+)', user_message)
-            min_price = float(match_range.group(1))
-            max_price = float(match_range.group(2))
-            products_db = conn.execute("SELECT id, name, price, image FROM products WHERE price BETWEEN ? AND ?", (min_price, max_price)).fetchall()
-            if products_db:
-                response_text = f"Here are some products in the range of ₹{min_price} to ₹{max_price}:"
-                products = [{"id": p["id"], "name": p["name"], "price": p["price"], "image": p["image"]} for p in products_db]
-            else:
-                response_text = f"I couldn't find any products in the range of ₹{min_price} to ₹{max_price}."
-        
-        # New logic for exact price search (e.g., "for ₹1000", "equal to ₹500")
-        elif re.search(r'(?:for|equal to|exactly)\s+₹?(\d+)', user_message):
-            match_exact = re.search(r'(?:for|equal to|exactly)\s+₹?(\d+)', user_message)
-            exact_price = float(match_exact.group(1))
-            products_db = conn.execute("SELECT id, name, price, image FROM products WHERE price = ?", (exact_price,)).fetchall()
-            if products_db:
-                response_text = f"Here are some products priced at exactly ₹{exact_price}:"
-                products = [{"id": p["id"], "name": p["name"], "price": p["price"], "image": p["image"]} for p in products_db]
-            else:
-                response_text = f"I couldn't find any products priced at exactly ₹{exact_price}."
-        
-       # Original flexible product search (e.g., "give me apple", "find me a phone")
-        elif re.search(r'(?:give me|get me|find|show me|search for|about|product|brand)\s*(.+)', user_message):
-            search_query_raw = re.search(r'(?:give me|get me|find|show me|search for|about|product|brand)\s*(.+)', user_message).group(1).strip().replace("?","")
-            search_query = f"%{search_query_raw}%"
-            # Corrected line: 'image' is changed to 'image_url'
-            products_db = conn.execute("SELECT id, name, price, image_url FROM products WHERE name LIKE ? OR specifications LIKE ? OR variant LIKE ?",(search_query, search_query, search_query)).fetchall()
-            if products_db:
-                response_text = f"Here's what I found for '{search_query_raw}':"
-                products = [{"id": p["id"], "name": p["name"], "price": p["price"], "image": p["image_url"]} for p in products_db]
-            else:
-                response_text = f"I couldn't find any products matching '{search_query_raw}'."
-
-        elif re.search(r'(.+?)\s+(?:under|in|less than|of)\s+₹?(\d+)', user_message):
-            match_product_price = re.search(r'(.+?)\s+(?:under|in|less than|of)\s+₹?(\d+)', user_message)
-            product_name_raw = match_product_price.group(1).strip()
-            price_limit = float(match_product_price.group(2))
-    
-            # Refine the product name to remove prefixes like "give me" or "show me"
-            product_name_refined = re.sub(r'^(?:give me|get me|find|show me|search for|about|product|brand|a)\s*', '', product_name_raw).strip()
-            search_query = f"%{product_name_refined}%"
-            products_db = conn.execute("SELECT id, name, price, image_url FROM products WHERE (name LIKE ? OR specifications LIKE ? OR variant LIKE ?) AND price <= ?",
-                                 (search_query, search_query, search_query, price_limit)).fetchall()
-    
-            if products_db:
-                response_text = f"Here's what I found for '{product_name_refined.capitalize()}' under ₹{price_limit}:"
-                products = [{"id": p["id"], "name": p["name"], "price": p["price"], "image": p["image_url"]} for p in products_db]
-            else:
-                response_text = f"I couldn't find any products matching '{product_name_refined.capitalize()}' under ₹{price_limit}."
-        # Original flexible product search (e.g., "give me apple", "find me a phone")
-        elif re.search(r'(?:give me|get me|find|show me|search for|about|product|brand)\s*(.+)', user_message):
-            search_query_raw = re.search(r'(?:give me|get me|find|show me|search for|about|product|brand)\s*(.+)', user_message).group(1).strip().replace("?","")
-            search_query = f"%{search_query_raw}%"
-            products_db = conn.execute("SELECT id, name, price, image FROM products WHERE name LIKE ? OR specifications LIKE ? OR variant LIKE ?",(search_query, search_query, search_query)).fetchall()
-            if products_db:
-                response_text = f"Here's what I found for '{search_query_raw}':"
-                products = [{"id": p["id"], "name": p["name"], "price": p["price"], "image": p["image"]} for p in products_db]
-            else:
-                response_text = f"I couldn't find any products matching '{search_query_raw}'."
-        
-        # Product specifications
-        elif "specifications" in user_message and "of" in user_message:
-            product_name = user_message.split("of")[-1].strip().replace("?", "")
-            product_spec = conn.execute("SELECT specifications FROM products WHERE name LIKE ?",(f"%{product_name}%",)).fetchone()
-            if product_spec and product_spec['specifications']:
-                response_text = f"The specifications for {product_name.capitalize()} are: {product_spec['specifications']}"
-            else:
-                response_text = f"I couldn't find specifications for {product_name.capitalize()}."
-
-        # Order tracking (Buyer)
-        elif "order" in user_message and 'user_id' in session:
+            # Seller: Update Price
+            elif re.search(r'update price of\s+(.+?)\s+to\s+₹?([\d,]+\.?\d*)', user_message, re.I):
+                match = re.search(r'update price of\s+(.+?)\s+to\s+₹?([\d,]+\.?\d*)', user_message, re.I)
+                product_name = match.group(1).strip()
+                # Clean up price string before conversion
+                new_price = float(match.group(2).replace(',', '').strip())
+                cursor.execute("UPDATE products SET price = ? WHERE name LIKE ? AND seller_id = ?", (new_price, f"%{product_name}%", user_id))
+                db.commit()
+                if cursor.rowcount > 0:
+                    response_text = f"The price of {product_name.capitalize()} has been updated to ₹{new_price:.2f}."
+                else:
+                    response_text = f"Could not find product '{product_name.capitalize()}' in your store."
+                return jsonify({"message": response_text})
+            
+            # Seller: Delete Product
+            elif re.search(r'delete product\s+(.+)', user_message, re.I):
+                product_name = re.search(r'delete product\s+(.+)', user_message, re.I).group(1).strip().replace("from my store", "").strip()
+                cursor.execute("DELETE FROM products WHERE name LIKE ? AND seller_id = ?", (f"%{product_name}%", user_id))
+                db.commit()
+                if cursor.rowcount > 0:
+                    response_text = f"The product {product_name.capitalize()} has been deleted."
+                else:
+                    response_text = f"Could not find product '{product_name.capitalize()}' in your store to delete."
+                return jsonify({"message": response_text})
+            
+        # 7. Order tracking (Buyer)
+        if "order" in user_message.lower() and user_id:
             order_match = re.search(r'order\s+#?(\d+)', user_message)
             if order_match:
                 order_id = int(order_match.group(1))
-                order = conn.execute("SELECT status FROM orders WHERE id = ? AND buyer_id = ?", (order_id, session['user_id'])).fetchone()
+                cursor.execute("SELECT status FROM orders WHERE id = ? AND user_id = ?", (order_id, user_id))
+                order = cursor.fetchone()
                 if order:
                     response_text = f"Order #{order_id} has a status of: {order['status'].capitalize()}"
                 else:
                     response_text = "I couldn't find that order. Please make sure the order ID is correct."
             else:
-                response_text = "Please provide your order number to check its status. For example, 'Where is my order #12345?'"
+                response_text = "Please provide your order number to check its status. Example: 'Where is my order #12345?'"
+            
+            return jsonify({"message": response_text})
+            
+        # 5. Product specifications
+        if "specifications" in user_message.lower() and "of" in user_message.lower():
+            product_name = user_message.split("of")[-1].strip().replace("?", "")
+            cursor.execute("SELECT specifications FROM products WHERE name LIKE ?", (f"%{product_name}%",))
+            product_spec = cursor.fetchone()
+            if product_spec and product_spec['specifications']:
+                response_text = f"The specifications for {product_name.capitalize()} are: {product_spec['specifications']}"
+            else:
+                response_text = f"I couldn't find specifications for {product_name.capitalize()}."
+            
+            return jsonify({"message": response_text})
+            
+        # 2, 3, 4. Product Search (Combined, handles name, max price, min price, range, and EQUAL)
+        product_search_match = re.search(r'(?:give me|get me|find|show me|search for|about|product|brand|view|what are|i want|looking for|\w+\s+me|show)\s*(.+)', user_message, re.I)
         
-        # --- Seller-specific Queries ---
-        elif role == 'seller':
-            if "update price of" in user_message and "to ₹" in user_message:
-                parts = re.split(r'update price of|to ₹', user_message)
-                product_name = parts[1].strip()
-                new_price = float(parts[2].strip())
-                conn.execute("UPDATE products SET price = ? WHERE name LIKE ? AND seller_id = ?", (new_price, f"%{product_name}%", session['user_id']))
-                conn.commit()
-                response_text = f"The price of {product_name.capitalize()} has been updated to ₹{new_price}."
+        if product_search_match:
+            search_query_raw = product_search_match.group(1).strip().replace("?", "")
             
-            elif "delete product" in user_message:
-                product_name = user_message.split("delete product")[-1].strip().replace("from my store", "").strip()
-                conn.execute("DELETE FROM products WHERE name LIKE ? AND seller_id = ?", (f"%{product_name}%", session['user_id']))
-                conn.commit()
-                response_text = f"The product {product_name.capitalize()} has been deleted."
+            # Price Regexes (Updated to handle commas and currency)
+            price_range_match = re.search(r'between\s+₹?([\d,]+\.?\d*)\s+and\s+₹?([\d,]+\.?\d*)', search_query_raw, re.I)
+            price_min_match = re.search(r'(.+?)\s+(?:above|over|more than)\s+₹?([\d,]+\.?\d*)', search_query_raw, re.I)
+            price_max_match = re.search(r'(.+?)\s+(?:under|less than)\s+₹?([\d,]+\.?\d*)', search_query_raw, re.I)
+            # NEW: Equal price match regex
+            price_equal_match = re.search(r'(.+?)\s+(?:equal|exactly|at)\s+₹?([\d,]+\.?\d*)', search_query_raw, re.I)
+
+            sql_query = "SELECT id, name, price, image_url, description FROM products WHERE (name LIKE ? OR specifications LIKE ? OR variant LIKE ?)"
+            params = []
+            final_search_term = search_query_raw
             
-            elif "check stock" in user_message or "stock levels" in user_message:
-                stock_levels = conn.execute("SELECT name, stock FROM products WHERE seller_id = ?", (session['user_id'],)).fetchall()
-                if stock_levels:
-                    stock_list = [f"{p['name']}: {p['stock']}" for p in stock_levels]
-                    response_text = "Here are your current stock levels:\n" + "\n".join(stock_list)
-                else:
-                    response_text = "You do not have any products listed yet."
+            if price_range_match: # Price Range
+                min_price = float(price_range_match.group(1).replace(',', '').strip())
+                max_price = float(price_range_match.group(2).replace(',', '').strip())
+                sql_query += " AND price BETWEEN ? AND ? LIMIT 5"
+                # Strip price terms for name search
+                search_term_for_name = re.sub(r'between\s+₹?[\d,]+\.?\d*\s+and\s+₹?[\d,]+\.?\d*', '', final_search_term, flags=re.I).strip()
+                search_term_for_name = f"%{search_term_for_name}%" if search_term_for_name else "%%"
+                params.extend([search_term_for_name] * 3)
+                params.extend([min_price, max_price])
+                response_text = f"Here are products in the range of ₹{min_price:.2f} to ₹{max_price:.2f}:"
+                
+            elif price_equal_match: # NEW: Exact Price Match
+                product_name_for_equal = re.sub(r'(?:equal|exactly|at).*', '', price_equal_match.group(1)).strip()
+                price_limit = float(price_equal_match.group(2).replace(',', '').strip())
+                
+                sql_query += " AND price = ? LIMIT 5"
+                final_search_term = product_name_for_equal if product_name_for_equal else search_query_raw.split('equal')[0].split('exactly')[0].split('at')[0].strip()
+                
+                params.extend([f"%{final_search_term}%"] * 3)
+                params.append(price_limit)
+                response_text = f"Here's what I found for '{final_search_term.capitalize()}' priced exactly at ₹{price_limit:.2f}:"
+
+            elif price_min_match: # Min Price
+                product_name_for_min = re.sub(r'(?:above|over|more than).*', '', price_min_match.group(1)).strip()
+                price_limit = float(price_min_match.group(2).replace(',', '').strip())
+                
+                sql_query += " AND price >= ? LIMIT 5"
+                final_search_term = product_name_for_min if product_name_for_min else search_query_raw.split('above')[0].split('over')[0].split('more than')[0].strip()
+                
+                params.extend([f"%{final_search_term}%"] * 3)
+                params.append(price_limit)
+                response_text = f"Here's what I found for '{final_search_term.capitalize()}' above ₹{price_limit:.2f}:"
+
+            elif price_max_match: # Max Price
+                product_name_for_max = re.sub(r'(?:under|less than).*', '', price_max_match.group(1)).strip()
+                price_limit = float(price_max_match.group(2).replace(',', '').strip())
+                sql_query += " AND price <= ? LIMIT 5"
+                final_search_term = product_name_for_max if product_name_for_max else search_query_raw.split('under')[0].split('less than')[0].strip()
+                
+                params.extend([f"%{final_search_term}%"] * 3)
+                params.append(price_limit)
+                response_text = f"Here's what I found for '{final_search_term.capitalize()}' under ₹{price_limit:.2f}:"
             
-            elif "pending orders" in user_message:
-                pending_orders = conn.execute("SELECT o.id, p.name FROM orders o JOIN products p ON o.product_id = p.id WHERE p.seller_id = ? AND o.status = 'pending'", (session['user_id'],)).fetchall()
-                if pending_orders:
-                    order_list = [f"Order #{o['id']} ({o['name']})" for o in pending_orders]
-                    response_text = "Here are your pending orders:\n" + "\n".join(order_list)
-                else:
-                    response_text = "You do not have any pending orders."
+            else: # General Product Search
+                sql_query += " LIMIT 5"
+                params.extend([f"%{final_search_term}%"] * 3)
+                response_text = f"Here's what I found for '{final_search_term}':"
 
-        # --- Admin-specific Queries ---
-        elif role == 'admin':
-            if "unanswered questions" in user_message:
-                unanswered_q = conn.execute("SELECT id, question FROM knowledge_base WHERE answer IS NULL").fetchall()
-                if unanswered_q:
-                    q_list = [q['question'] for q in unanswered_q]
-                    response_text = "Here are the unanswered questions:\n" + "\n".join(q_list)
-                else:
-                    response_text = "There are no unanswered questions at this time."
-
-            elif "show me all registered users" in user_message:
-                users_list = conn.execute("SELECT username, email, role FROM users").fetchall()
-                if users_list:
-                    user_details = [f"Username: {u['username']}, Email: {u['email']}, Role: {u['role']}" for u in users_list]
-                    response_text = "Here are the registered users:\n" + "\n".join(user_details)
-                else:
-                    response_text = "No users found."
-
-            elif "add a new table" in user_message or "run custom sql" in user_message or "delete table" in user_message:
-                response_text = "I'm sorry, for security reasons, I cannot perform direct database schema modifications or run custom SQL queries via chat. Please contact the system administrator."
-
-        # Fallback: If no specific query is matched, log the question and provide a generic response
-        if products is None:
-            # Check if the question already exists as an unanswered question to avoid duplicates
-            existing_question = conn.execute("SELECT id FROM knowledge_base WHERE question = ? AND answer IS NULL", (user_message,)).fetchone()
-            if not existing_question:
-                conn.execute("INSERT INTO knowledge_base (question) VALUES (?)", (user_message,))
-                conn.commit()
+            products_db = cursor.execute(sql_query, tuple(params)).fetchall()
             
-            # This is the final fallback message
-            response_text = "I'm sorry, I don't have an answer for that. An administrator will review your question shortly."
+            if products_db:
+                products = [{"id": p["id"], "name": p["name"], "price": p["price"], "image_url": p["image_url"], "description": p["description"]} for p in products_db]
+            else:
+                response_text = f"I couldn't find any products matching your search criteria: '{search_query_raw}'. I can only help with specific product searches (like 'find shoes' or 'what are the specifications of X'), order tracking, or seller commands."
+        
+        # Final catch-all for general queries (now fully non-LLM)
+        if not products and response_text == "I'm sorry, I don't have an answer for that.":
+            response_text = "I'm sorry, I can only help with specific product searches (like 'find shoes' or 'what are the specifications of X'), order tracking, or seller commands."
 
     except Exception as e:
         print(f"Chatbot error: {e}")
-        response_text = "An error occurred while processing your request. My apologies."
-    finally:
-        conn.close()
-    
+        response_text = "An internal server error occurred while processing your request. Please check the server logs."
+
     response = {"message": response_text}
     if products:
-        response["products"] = products
-        
+        response["products"] = [{"id": p.get("id"), "name": p.get("name"), "price": p.get("price"), "image_url": p.get("image_url"), "description": p.get("description", "") } for p in products]
+    
     return jsonify(response)
-
-
-# ------------------ SELLER ROUTES ------------------
-@app.route("/add_product", methods=["GET", "POST"])
-@login_required
-@role_required(['seller', 'admin'])
-def add_product():
-    """Allows a seller to add a new product."""
-    if request.method == "POST":
-        name = request.form["name"]
-        price = float(request.form["price"])
-        variant = request.form.get("variant", "")
-        stock = int(request.form.get("stock", 0))
-        specifications = request.form.get("specifications", "")
-
-        image_file = request.files["image"]
-        filename = secure_filename(image_file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        image_file.save(filepath)
-
-        conn = get_db_connection()
-        # Correct the INSERT query to match the table schema
-        conn.execute("INSERT INTO products (seller_id, name, price, image_url, variant, stock, specifications) VALUES (?, ?, ?, ?, ?, ?, ?)",
-             (session["user_id"], name, price, filename, variant, stock, specifications))
-        conn.commit()
-        conn.close()
-        flash("Product added successfully!", "success")
-        return redirect(url_for("home"))
-    return render_template("add_product.html")
-
-
-# ------------------ BUYER ROUTES ------------------
-@app.route("/buy/<int:product_id>", methods=["GET"])
-@login_required
-def buy(product_id):
-    """Initiates a purchase by creating a Razorpay order."""
-    conn = get_db_connection()
-    product = conn.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
-    if not product:
-        return "Product not found", 404
-
-    # Get quantity and variant from the URL parameters
-    quantity = int(request.args.get('quantity', 1))
-    selected_variants = {}
-    for key, value in request.args.items():
-        if key.startswith('variant-'):
-            variant_name = key.replace('variant-', '')
-            selected_variants[variant_name] = value
-    
-    # Format variants into a string to pass to the template
-    variant_string = "|".join([f"{k}={v}" for k, v in selected_variants.items()])
-
-    amount = int(product["price"] * quantity * 100) # Razorpay requires amount in paise
-
-    order_receipt = f"receipt_{random.randint(10000, 99999)}"
-    data = {
-        "amount": amount, 
-        "currency": "INR",
-        "receipt": order_receipt
-    }
-
-    razorpay_order = razorpay_client.order.create(data=data)
-    conn.close()
-    return render_template("checkout.html", product=product, razorpay_order=razorpay_order, quantity=quantity, variant_string=variant_string)
-
-@app.route("/payment_success", methods=["POST"])
-@login_required
-def payment_success():
-    """Handles the callback after a successful Razorpay payment."""
-    payment_id = request.form.get("razorpay_payment_id")
-    order_id = request.form.get("razorpay_order_id")
-    signature = request.form.get("razorpay_signature")
-    product_id = request.args.get("product_id")
-    quantity = int(request.args.get("quantity", 1))
-    variant_string = request.args.get("variants", "")
-
-    conn = get_db_connection()
-    product = conn.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
-    if not product:
-        conn.close()
-        return "Product not found", 404
-
-    total_amount = product['price'] * quantity
-    seller_id = product['seller_id']
-
-    params_dict = {
-        'razorpay_order_id': order_id,
-        'razorpay_payment_id': payment_id,
-        'razorpay_signature': signature
-    }
-
-    try:
-        razorpay_client.utility.verify_payment_signature(params_dict)
-        payment_status = "success"
-        message = "Payment Successful!"
-        flash(message, "success")
-    except razorpay.errors.SignatureVerificationError:
-        payment_status = "failed"
-        message = "Payment Failed! Signature verification failed."
-        flash(message, "danger")
-
-    conn.execute("INSERT INTO orders (product_id, buyer_id, seller_id, amount, quantity, variant, status, razorpay_payment_id, razorpay_order_id, razorpay_signature) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                 (product_id, session["user_id"], seller_id, total_amount, quantity, variant_string, payment_status, payment_id, order_id, signature))
-    conn.commit()
-    conn.close()
-
-    return redirect(url_for("my_orders"))
-
-# ------------------ BUYER ORDER ROUTES ------------------
-
-@app.route('/my_orders')
-@login_required
-def my_orders():
-    """Displays all orders for the logged-in user."""
-    conn = get_db_connection()
-    try:
-        # Join the orders and products tables to get all necessary data
-        orders = conn.execute("""
-            SELECT o.*, p.name AS product_name, p.image_url AS product_image, p.price AS unit_price
-            FROM orders o
-            JOIN products p ON o.product_id = p.id
-            WHERE o.buyer_id = ?
-            ORDER BY o.created_at DESC
-        """, (session['user_id'],)).fetchall()
+if __name__ == '__main__':
+    with app.app_context():
+        init_db() 
         
-        # Check if the user is a seller to display their orders as well
-        if session['role'] == 'seller':
-            seller_orders = conn.execute("""
-                SELECT o.*, p.name AS product_name, p.image_url AS product_image, u.username AS buyer_name
-                FROM orders o
-                JOIN products p ON o.product_id = p.id
-                JOIN users u ON o.buyer_id = u.id
-                WHERE o.seller_id = ?
-                ORDER BY o.created_at DESC
-            """, (session['user_id'],)).fetchall()
-        else:
-            seller_orders = None
-
-    except sqlite3.Error as e:
-        flash(f"Database error: {e}", "danger")
-        orders = []
-        seller_orders = None
-    finally:
-        conn.close()
-
-    return render_template("my_orders.html", orders=orders, seller_orders=seller_orders)
-
-
-@login_required
-@app.route("/update_order_status", methods=["POST"])
-def update_order_status():
-    order_id = request.form["order_id"]
-    new_status = request.form["new_status"]
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE orders SET status=? WHERE id=?", (new_status, order_id))
-    conn.commit()
-    conn.close()
-    flash("Order status updated successfully.", "success")
-    return redirect(url_for("db_manager"))
-
-
-# ------------------ SELLER DASHBOARD ------------------
-@app.route("/seller_orders")
-@login_required
-@role_required('seller')
-def seller_orders():
-    """Displays seller-specific orders and statistics."""
-    conn = get_db_connection()
-    orders = conn.execute('''
-        SELECT o.*, p.name AS product_name, u.username AS buyer_name, p.variant AS product_variants
-        FROM orders o
-        JOIN products p ON o.product_id = p.id
-        JOIN users u ON o.buyer_id = u.id
-        WHERE p.seller_id=?
-        ORDER BY o.created_at DESC
-    ''', (session["user_id"],)).fetchall()
-
-    stats = conn.execute('''
-        SELECT p.name, COUNT(o.id) as sold_count, SUM(o.amount) as revenue
-        FROM orders o
-        JOIN products p ON o.product_id = p.id
-        WHERE p.seller_id=? AND o.status='success'
-        GROUP BY p.name
-    ''', (session["user_id"],)).fetchall()
-    conn.close()
-    return render_template("seller_orders.html", orders=orders, stats=stats)
-
-# ------------------ SELLER-SPECIFIC ROUTES (PRODUCT MANAGEMENT) ------------------
-
-@app.route("/edit_product/<int:product_id>", methods=["GET", "POST"])
-@login_required
-@role_required("seller")
-def edit_product(product_id):
-    """
-    Allows a seller to edit an existing product.
-    GET: Renders the edit form with pre-filled product data.
-    POST: Processes the form submission to update the product details.
-    """
-    conn = get_db_connection()
-    product = conn.execute("SELECT * FROM products WHERE id = ? AND seller_id = ?", (product_id, session['user_id'])).fetchone()
-
-    # If product doesn't exist or doesn't belong to the seller, show an error and redirect
-    if product is None:
-        flash("Product not found or you don't have permission to edit it.", "danger")
-        conn.close()
-        return redirect(url_for("seller_orders"))
-
-    if request.method == "POST":
-        name = request.form.get("name")
-        price = request.form.get("price")
-        stock = request.form.get("stock")
-        color = request.form.get("color")
-        size = request.form.get("size")
-        variant = request.form.get("variant")
-        specifications = request.form.get("specifications")
-        
-        # Check if a new image file was uploaded
-        image_file = request.files.get("image")
-        if image_file and image_file.filename != '':
-            try:
-                # Securely save the new image and update the image_url
-                filename = secure_filename(image_file.filename)
-                image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                image_file.save(image_path)
-                image_url = filename
-            except Exception as e:
-                flash(f"Error saving image: {e}", "danger")
-                conn.close()
-                return redirect(url_for("edit_product", product_id=product_id))
-        else:
-            # If no new image, keep the existing one
-            image_url = product['image_url']
-
-        try:
-            conn.execute("""
-                UPDATE products SET name=?, price=?, stock=?, image_url=?, color=?, size=?, variant=?, specifications=?
-                WHERE id=? AND seller_id=?
-            """, (name, price, stock, image_url, color, size, variant, specifications, product_id, session['user_id']))
-            conn.commit()
-            flash("Product updated successfully!", "success")
-            return redirect(url_for("seller_orders"))
-        except sqlite3.Error as e:
-            flash(f"Database error: {e}", "danger")
-        finally:
-            conn.close()
-
-    conn.close()
-    return render_template("edit_product.html", product=product)
-@app.route("/delete_product/<int:product_id>", methods=["GET", "POST"])
-@login_required
-@role_required("seller")
-def delete_product(product_id):
-    """
-    Allows a seller to delete a product.
-    GET: Renders a confirmation page.
-    POST: Deletes the product from the database.
-    """
-    conn = get_db_connection()
-    product = conn.execute("SELECT * FROM products WHERE id = ? AND seller_id = ?", (product_id, session['user_id'])).fetchone()
-
-    # If product doesn't exist or doesn't belong to the seller, show an error and redirect
-    if product is None:
-        flash("Product not found or you don't have permission to delete it.", "danger")
-        conn.close()
-        return redirect(url_for("seller_orders"))
-
-    if request.method == "POST":
-        try:
-            conn.execute("DELETE FROM products WHERE id = ? AND seller_id = ?", (product_id, session['user_id']))
-            conn.commit()
-            flash("Product deleted successfully!", "success")
-        except sqlite3.Error as e:
-            flash(f"Database error: {e}", "danger")
-        finally:
-            conn.close()
-        return redirect(url_for("seller_orders"))
-
-    conn.close()
-    return render_template("delete_product.html", product=product)
-@app.route("/admin", methods=["GET", "POST"])
-@login_required
-@role_required("admin")
-def admin():
-    """
-    Admin dashboard to view and manage users and products.
-    GET: Displays all users and products.
-    POST: Updates a user's role based on form submission.
-    """
-    conn = get_db_connection()
-
-    if request.method == "POST":
-        username = request.form.get("username")
-        new_role = request.form.get("role")
-        
-        if username and new_role:
-            try:
-                conn.execute("UPDATE users SET role = ? WHERE username = ?", (new_role, username))
-                conn.commit()
-                flash(f"Successfully updated role for {username} to {new_role}.", "success")
-            except sqlite3.Error as e:
-                flash(f"Database error: {e}", "danger")
-        else:
-            flash("Invalid form data for user update.", "danger")
-
-    # This part of the code remains the same, but now it's inside the 'if' block
-    users = conn.execute("SELECT username, email, role FROM users").fetchall()
-    products = conn.execute("""
-        SELECT p.*, u.username AS seller_name
-        FROM products p
-        JOIN users u ON p.seller_id = u.id
-    """).fetchall()
-
-    conn.close()
-    return render_template("admin.html", users=users, products=products)
-# ------------------ ADMIN PANEL ------------------
-
-@app.route("/delete_user/<int:user_id>", methods=["POST"])
-@login_required
-@role_required('admin')
-def delete_user(user_id):
-    """Allows an admin to delete a user."""
-    conn = get_db_connection()
-    user_to_delete = conn.execute("SELECT username FROM users WHERE id = ?", (user_id,)).fetchone()
-    if user_to_delete and user_to_delete['username'] in ['admin', 'dbmanager']:
-        flash("Cannot delete a default user.", "danger")
-    else:
-        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
-        conn.commit()
-        flash("User deleted successfully!", "success")
-    conn.close()
-    return redirect(url_for("admin"))
-
-
-@app.route("/unanswered_questions")
-@login_required
-@role_required('admin')
-def unanswered_questions():
-    """Displays a list of unanswered chatbot questions for the admin to review."""
-    conn = get_db_connection()
-    questions = conn.execute("SELECT * FROM knowledge_base WHERE answer IS NULL").fetchall()
-    conn.close()
-    return render_template("unanswered_questions.html", questions=questions)
-
-@app.route("/delete_question/<int:question_id>", methods=["POST"])
-@login_required
-@role_required(['admin'])
-def delete_question(question_id):
-    """Deletes an unanswered question from the knowledge base."""
-    conn = get_db_connection()
-    conn.execute("DELETE FROM knowledge_base WHERE id = ?", (question_id,))
-    conn.commit()
-    conn.close()
-    flash("Question deleted successfully.", "success")
-    return redirect(url_for("unanswered_questions"))
-
-@app.route("/answer_question/<int:question_id>", methods=["POST"])
-@login_required
-@role_required('admin')
-def answer_question(question_id):
-    """Allows an admin to provide an answer to a question."""
-    answer = request.form["answer"]
-    sql_query = request.form.get("sql_query")
-    conn = get_db_connection()
-    conn.execute("UPDATE knowledge_base SET answer = ?, sql_query = ? WHERE id = ?", (answer, sql_query, question_id))
-    conn.commit()
-    conn.close()
-    flash("Question answered successfully!", "success")
-    return redirect(url_for("unanswered_questions"))
-
-@app.route("/add_new_question", methods=["POST"])
-@login_required
-@role_required('admin')
-def add_new_question():
-    """Allows an admin to manually add a new Q&A pair to the knowledge base."""
-    question = request.form["question"]
-    answer = request.form["answer"]
-    sql_query = request.form.get("sql_query", None)
-    conn = get_db_connection()
-    try:
-        conn.execute("INSERT INTO knowledge_base (question, answer, sql_query) VALUES (?, ?, ?)", (question, answer, sql_query))
-        conn.commit()
-        flash("New Q&A added successfully!", "success")
-    except sqlite3.IntegrityError:
-        flash("A question with that text already exists.", "danger")
-    finally:
-        conn.close()
-    return redirect(url_for("answered_questions"))
-
-@app.route("/answered_questions")
-@login_required
-@role_required('admin')
-def answered_questions():
-    """Displays a list of answered chatbot questions."""
-    conn = get_db_connection()
-    questions = conn.execute("SELECT * FROM knowledge_base WHERE answer IS NOT NULL").fetchall()
-    conn.close()
-    return render_template("answered_questions.html", questions=questions)
-
-@app.route("/delete_answered_questions", methods=["POST"])
-@login_required
-@role_required('admin')
-def delete_all_answered_questions():
-    """Allows an admin to delete all answered questions."""
-    conn = get_db_connection()
-    conn.execute("DELETE FROM knowledge_base WHERE answer IS NOT NULL")
-    conn.commit()
-    conn.close()
-    flash("All answered questions deleted successfully!", "success")
-    return redirect(url_for("answered_questions"))
-
-@app.route("/delete_answered_question/<int:question_id>", methods=["POST"])
-@login_required
-@role_required('admin')
-def delete_answered_question(question_id):
-    """Allows an admin to delete a single answered question."""
-    conn = get_db_connection()
-    conn.execute("DELETE FROM knowledge_base WHERE id = ? AND answer IS NOT NULL", (question_id,))
-    conn.commit()
-    conn.close()
-    flash("Question deleted successfully!", "success")
-    return redirect(url_for("answered_questions"))
-
-# ------------------ DB MANAGER ACTION ROUTES ------------------
-
-@app.route("/add_column", methods=['POST'])
-@login_required
-@role_required('dbmanager')
-def add_column():
-    """Handles the form submission for adding a new column to a table."""
-    if request.method == 'POST':
-        table_name = request.form['table_name']
-        column_name = request.form['column_name']
-        column_type = request.form['column_type']
-
-        if not table_name or not column_name or not column_type:
-            flash("Please fill in all fields.", "error")
-            return redirect(url_for('db_manager'))
-
-        conn = get_db_connection()
-        try:
-            # Note: This is a simplified example. Parameter substitution is not possible with
-            # table and column names in SQLite, so direct string formatting is used.
-            # In a production environment, this should be handled with extreme care
-            # to prevent SQL injection by validating table and column names against a list of known, safe names.
-            conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type};")
-            conn.commit()
-            flash(f"Column '{column_name}' added to table '{table_name}' successfully.", "success")
-        except sqlite3.OperationalError as e:
-            flash(f"Error adding column: {e}", "error")
-        except Exception as e:
-            flash(f"An unexpected error occurred: {e}", "error")
-        finally:
-            conn.close()
-            return redirect(url_for('db_manager', table=table_name))
-
-@app.route("/split_table", methods=['POST'])
-@login_required
-@role_required('dbmanager')
-def split_table():
-    """Handles the form submission for splitting a table."""
-    if request.method == 'POST':
-        old_table_name = request.form['old_table_name']
-        new_table_name = request.form['new_table_name']
-        selected_columns = request.form.getlist('selected_columns')
-
-        if not old_table_name or not new_table_name or not selected_columns:
-            flash("Please fill in all fields and select at least one column.", "error")
-            return redirect(url_for('db_manager'))
-
-        conn = get_db_connection()
-        try:
-            # Create the new table with the selected columns
-            columns_str = ", ".join([f"{col} TEXT" for col in selected_columns]) # Assuming TEXT type for simplicity
-            conn.execute(f"CREATE TABLE {new_table_name} ({columns_str});")
-            conn.commit()
-            flash(f"Table '{old_table_name}' split and new table '{new_table_name}' created.", "success")
-        except sqlite3.OperationalError as e:
-            flash(f"Error splitting table: {e}", "error")
-        except Exception as e:
-            flash(f"An unexpected error occurred: {e}", "error")
-        finally:
-            conn.close()
-            return redirect(url_for('db_manager', table=old_table_name))
-
-@app.route("/create_table", methods=['POST'])
-@login_required
-@role_required('dbmanager')
-def create_table():
-    """Handles the form submission for creating a new table."""
-    if request.method == 'POST':
-        table_name = request.form['table_name']
-        column_names = request.form.getlist('column_name[]')
-        column_types = request.form.getlist('column_type[]')
-
-        if not table_name or not column_names or not column_types:
-            flash("Please fill in the table name and at least one column.", "error")
-            return redirect(url_for('db_manager'))
-
-        # Combine column names and types
-        columns_with_types = [f"{name} {col_type}" for name, col_type in zip(column_names, column_types)]
-        columns_sql = ", ".join(columns_with_types)
-
-        conn = get_db_connection()
-        try:
-            conn.execute(f"CREATE TABLE {table_name} ({columns_sql});")
-            conn.commit()
-            flash(f"Table '{table_name}' created successfully.", "success")
-        except sqlite3.OperationalError as e:
-            flash(f"Error creating table: {e}", "error")
-        except Exception as e:
-            flash(f"An unexpected error occurred: {e}", "error")
-        finally:
-            conn.close()
-            return redirect(url_for('db_manager'))
-
-
-@app.route("/execute_query", methods=['POST'])
-@login_required
-@role_required('dbmanager')
-def execute_query():
-    """Executes a custom SQL query and returns the result."""
-    if request.method == 'POST':
-        query = request.form['query']
-        conn = get_db_connection()
-        try:
-            # Execute the query
-            cursor = conn.execute(query)
-            # Fetch results only for SELECT queries
-            if query.strip().upper().startswith('SELECT'):
-                columns = [desc[0] for desc in cursor.description]
-                query_result = cursor.fetchall()
-                # You can store this result in a flash message or a session to display it
-                flash("Query executed successfully.", "success")
-                # For simplicity, you might want to store the result in the session or pass it to a new template
-                # session['query_result'] = {'columns': columns, 'data': query_result}
-                # The provided HTML uses a flash message with the 'query_result' category
-                flash(f"Query Result: {query_result}", "query_result")
-            else:
-                conn.commit()
-                flash("Query executed successfully.", "success")
-        except sqlite3.OperationalError as e:
-            flash(f"SQL Error: {e}", "error")
-        except Exception as e:
-            flash(f"An unexpected error occurred: {e}", "error")
-        finally:
-            conn.close()
-            return redirect(url_for('db_manager'))
-# ------------------ PROFILE ROUTE ------------------
-@app.route("/profile", methods=["GET", "POST"])
-@login_required
-def profile():
-    """Allows a user to view and update their profile information."""
-    conn = get_db_connection()
-    user = conn.execute("SELECT id, username, email, role FROM users WHERE id = ?", (session["user_id"],)).fetchone()
-    
-    if request.method == "POST":
-        new_username = request.form["username"]
-        new_email = request.form["email"]
-        
-        try:
-            conn.execute("UPDATE users SET username = ?, email = ? WHERE id = ?",
-                         (new_username, new_email, session["user_id"]))
-            conn.commit()
-            
-            # Update the session with the new username to reflect changes immediately
-            session["username"] = new_username
-            flash("Profile updated successfully!", "success")
-            
-        except sqlite3.IntegrityError:
-            flash("Username or email already exists. Please choose a different one.", "danger")
-        except Exception as e:
-            flash(f"An error occurred: {e}", "danger")
-        finally:
-            conn.close()
-            return redirect(url_for("profile"))
-            
-    conn.close()
-    return render_template("profile.html", user=user)
-
-# ------------------ DB MANAGER ROUTE (WITH ORDER UPDATE) ------------------
-
-@app.route("/db_manager", methods=["GET", "POST"])
-@login_required
-@role_required("dbmanager") # Ensure only dbmanager can access
-def db_manager():
-    """
-    Database Manager Dashboard to view tables and update orders.
-    GET: Displays the database tables and order data.
-    POST: Processes a request to update an order's status.
-    """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    if request.method == "POST":
-        order_id = request.form.get("order_id")
-        new_status = request.form.get("status")
-        if order_id and new_status:
-            try:
-                conn.execute("UPDATE orders SET status = ? WHERE id = ?", (new_status, order_id))
-                conn.commit()
-                flash("Order status updated successfully!", "success")
-            except sqlite3.Error as e:
-                flash(f"Database error: {e}", "danger")
-        else:
-            flash("Invalid data for order update.", "danger")
-        # Redirect to GET request to prevent form resubmission on refresh
-        return redirect(url_for("db_manager"))
-
-    # Fetch all tables for the dropdown
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-    tables = cursor.fetchall()
-    
-    selected_table = request.args.get("table")
-    columns = []
-    table_data = []
-
-    if selected_table:
-        cursor.execute(f"PRAGMA table_info({selected_table})")
-        columns = cursor.fetchall()
-        cursor.execute(f"SELECT * FROM {selected_table}")
-        table_data = cursor.fetchall()
-
-    # Fetch all orders to display them on the dashboard
-    orders = conn.execute("SELECT * FROM orders").fetchall()
-    
-    conn.close()
-
-    statuses = ["Payment Pending", "Processing", "Shipped", "In Transit", "Delivered"]
-
-    return render_template(
-        "db_dashboard.html",
-        tables=tables,
-        selected_table=selected_table,
-        columns=columns,
-        table_data=table_data,
-        orders=orders,
-        statuses=statuses
-    )
-
-
-
-
-if __name__ == "__main__":
-    # In a production environment, use a more robust server like Gunicorn or Waitress
-    app.run(debug=True, port=8000)
+    app.run(debug=True)
