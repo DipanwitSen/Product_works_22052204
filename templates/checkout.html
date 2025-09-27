@@ -5,24 +5,29 @@
     <style>
       body {
         font-family: "Segoe UI", sans-serif;
-        background: #fef9e7;
+        background: #ffe6f0; /* light pink background */
         text-align: center;
         padding-top: 50px;
       }
       .box {
         display: inline-block;
         padding: 30px;
-        background: white;
+        background: #fff0f6; /* slightly lighter pink inside box */
         border-radius: 10px;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         text-align: left;
       }
       h2 {
-        color: #ff6b81;
+        color: #ff4d94; /* darker pink header */
         text-align: center;
       }
       p {
         font-size: 1.1em;
+      }
+      hr {
+        border: 0;
+        border-top: 1px solid #ffc1e3;
+        margin: 15px 0;
       }
       .razorpay-btn {
         margin-top: 20px;
@@ -56,7 +61,7 @@
           data-description="Product Purchase"
           data-image="{{ url_for('static', filename='logo.png') }}"
           data-prefill.name="{{ session['username'] }}"
-          data-theme.color="#F37254"
+          data-theme.color="#FF80AB"  /* pink button color */
         ></script>
       </form>
     </div>
