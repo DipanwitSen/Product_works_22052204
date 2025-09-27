@@ -1,45 +1,73 @@
-{% extends 'base.html' %} {% block content %}
-<div class="container">
-  <a href="{{ url_for('home') }}" class="btn back-btn">
-    <i class="fa fa-arrow-left"></i> Back to Home
-  </a>
-  <h2>Add New Product</h2>
-  <form method="post" enctype="multipart/form-data">
-    <div class="form-group">
-      <label for="name">Product Name:</label>
-      <input type="text" name="name" required />
-    </div>
-    <div class="form-group">
-      <label for="price">Price:</label>
-      <input type="number" name="price" step="0.01" required />
-    </div>
-    <div class="form-group">
-      <label for="image">Image:</label>
-      <input type="file" name="image" required />
-    </div>
-    <div class="form-group">
-      <label for="variant"
-        >Variants (Optional, separate with pipe `|`, use comma for options.
-        <br />e.g., Color=Red,Blue,Black | Size=S,M,L):</label
-      >
-      <textarea
-        name="variant"
-        placeholder="e.g., Color=Red,Blue,Black | Size=S,M,L"
-      ></textarea>
-    </div>
-    <div class="form-group">
-      <label for="stock">Stock Quantity:</label>
-      <input type="number" name="stock" value="0" min="0" required />
-    </div>
-    <div class="form-group">
-      <label for="specifications">Specifications:</label>
-      <textarea
-        name="specifications"
-        rows="4"
-        placeholder="e.g., Processor: Apple M1, RAM: 8GB, Storage: 256GB SSD"
-      ></textarea>
-    </div>
-    <button type="submit" class="btn btn-primary">Add Product</button>
-  </form>
+{% extends 'base.html' %}
+{% block content %}
+<div class="min-h-screen bg-pink-50 flex items-center justify-center p-6">
+  <div class="w-full max-w-3xl bg-white rounded-3xl shadow-2xl p-8 space-y-6">
+    <a href="{{ url_for('home') }}" class="inline-flex items-center text-pink-600 hover:text-pink-800 font-semibold mb-4">
+      <i class="fa fa-arrow-left mr-2"></i> Back to Home
+    </a>
+
+    <h2 class="text-4xl font-bold text-center text-pink-600 mb-6">Add New Product</h2>
+
+    <form method="post" enctype="multipart/form-data" class="space-y-5">
+
+      <!-- Product Name -->
+      <div>
+        <label for="name" class="block text-gray-700 font-medium mb-2">Product Name:</label>
+        <input type="text" name="name" required
+               class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-300 focus:outline-none"/>
+      </div>
+
+      <!-- Price -->
+      <div>
+        <label for="price" class="block text-gray-700 font-medium mb-2">Price (₹):</label>
+        <input type="number" name="price" step="0.01" required
+               class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-300 focus:outline-none"/>
+      </div>
+
+      <!-- Image Upload -->
+      <div>
+        <label for="image" class="block text-gray-700 font-medium mb-2">Product Image:</label>
+        <input type="file" name="image" required
+               class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-300 focus:outline-none"/>
+      </div>
+
+      <!-- Variants -->
+      <div>
+        <label for="variant" class="block text-gray-700 font-medium mb-2">
+          Variants (Optional)<br />
+          <span class="text-sm text-gray-500">
+            Separate with pipe `|`, use comma for options. e.g., Color=Red,Blue,Black | Size=S,M,L
+          </span>
+        </label>
+        <textarea name="variant" rows="3"
+                  placeholder="e.g., Color=Red,Blue,Black | Size=S,M,L"
+                  class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-300 focus:outline-none"></textarea>
+      </div>
+
+      <!-- Stock -->
+      <div>
+        <label for="stock" class="block text-gray-700 font-medium mb-2">Stock Quantity:</label>
+        <input type="number" name="stock" value="0" min="0" required
+               class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-300 focus:outline-none"/>
+      </div>
+
+      <!-- Specifications -->
+      <div>
+        <label for="specifications" class="block text-gray-700 font-medium mb-2">Specifications:</label>
+        <textarea name="specifications" rows="4"
+                  placeholder="e.g., Processor: Apple M1, RAM: 8GB, Storage: 256GB SSD"
+                  class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-pink-300 focus:outline-none"></textarea>
+      </div>
+
+      <!-- Submit Button -->
+      <div class="text-center">
+        <button type="submit"
+                class="w-full py-3 bg-pink-600 text-white font-bold rounded-2xl shadow-lg hover:bg-pink-700 transition-colors duration-300">
+          Add Product
+        </button>
+      </div>
+
+    </form>
+  </div>
 </div>
 {% endblock %}
