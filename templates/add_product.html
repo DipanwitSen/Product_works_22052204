@@ -1,11 +1,14 @@
-{% extends "base.html" %} {% block title %}Add Product{% endblock %} {% block
-content %}
+{% extends "base.html" %} {% block title %} {% if product %}Edit Product: {{
+product.name }}{% else %}Add Product{% endif %} {% endblock %} {% block content
+%}
 <div class="auth-container">
   <div class="card auth-card">
-    <h2 style="text-align: center">Add New Product</h2>
+    <h2 style="text-align: center">
+      {% if product %}Edit Product{% else %}Add New Product{% endif %}
+    </h2>
     <form
       method="post"
-      action="{{ url_for('add_product') }}"
+      action="{% if product %}{{ url_for('edit_product', product_id=product.id) }}{% else %}{{ url_for('add_product') }}{% endif %}"
       enctype="multipart/form-data"
     >
       <div class="form-group">
@@ -15,6 +18,7 @@ content %}
           id="name"
           name="name"
           placeholder="Ex: Organic Cotton T-Shirt"
+          value="{{ product.name if product else '' }}"
           required
         />
       </div>
@@ -27,19 +31,55 @@ content %}
           name="price"
           step="0.01"
           placeholder="Ex: 1200.50"
+          value="{{ product.price if product else '' }}"
           required
         />
       </div>
 
       <div class="form-group">
-        <label for="image_file">Product Image</label>
+        <label for="image_file"
+          >Product Image {% if product %}(Leave blank to keep current){% else
+          %}*{% endif %}</label
+        >
+        {% if product and product.image_url %}
+        <p
+          style="
+            color: var(--muted-text);
+            font-size: 12px;
+            margin-top: -5px;
+            margin-bottom: 5px;
+          "
+        >
+          Current Image:
+          <a href="{{ product.image_url }}" target="_blank">View</a>
+        </p>
+        {% endif %}
         <input
           type="file"
           id="image_file"
           name="image_file"
           accept="image/*"
-          required
+          {%
+          if
+          not
+          product
+          %}required{%
+          endif
+          %}
         />
+      </div>
+
+      <div class="form-group">
+        <label for="description">Product Description</label>
+        <textarea
+          id="description"
+          name="description"
+          rows="5"
+          placeholder="A detailed description of the product."
+          required
+        >
+{{ product.description if product else '' }}</textarea
+        >
       </div>
 
       <div class="form-group">
@@ -49,6 +89,7 @@ content %}
           id="variant"
           name="variant"
           placeholder="Ex: Red, Blue, Small, Large"
+          value="{{ product.variant if product else '' }}"
         />
       </div>
 
@@ -60,6 +101,7 @@ content %}
           name="stock"
           min="0"
           placeholder="Ex: 50"
+          value="{{ product.stock if product else '' }}"
           required
         />
       </div>
@@ -71,7 +113,9 @@ content %}
           name="specifications"
           rows="3"
           placeholder="Ex: 100% Cotton, Machine Washable"
-        ></textarea>
+        >
+{{ product.specifications if product else '' }}</textarea
+        >
       </div>
 
       <div class="form-group">
@@ -81,11 +125,16 @@ content %}
           id="manufacturing_area"
           name="manufacturing_area"
           placeholder="Ex: City, State/Region"
+          value="{{ product.manufacturing_area if product else '' }}"
         />
       </div>
 
-      <button class="btn btn-primary" style="width: 100%" type="submit">
-        Publish Product
+      <button
+        class="btn btn-primary"
+        style="width: 100%; margin-top: 15px"
+        type="submit"
+      >
+        {% if product %}Update Product{% else %}Publish Product{% endif %}
       </button>
     </form>
   </div>
