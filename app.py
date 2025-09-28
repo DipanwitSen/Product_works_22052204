@@ -43,6 +43,21 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+def save_image(file):
+    if not file or not file.filename:
+        return None
+    original_filename = secure_filename(file.filename)
+    base_name, file_ext = os.path.splitext(original_filename)
+    random_hex = secrets.token_hex(8)
+    unique_filename = random_hex + file_ext
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+    try:
+        file.save(file_path)
+    except Exception as e:
+        print(f"Error saving file: {e}")
+        return None
+    return 'static/images/products/' + unique_filename
+
 @app.teardown_appcontext
 def close_connection(exception):
     db = getattr(g, '_database', None)
@@ -1011,3 +1026,4 @@ if __name__ == '__main__':
         init_db() 
         
     app.run(debug=True)
+
