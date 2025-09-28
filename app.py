@@ -420,22 +420,38 @@ def increase_quantity(cart_id):
 def decrease_quantity(cart_id):
     conn = get_db_connection()
     try:
-        item = conn.execute('SELECT quantity, name FROM cart WHERE id = ? AND user_id = ?', (cart_id, session['user_id'])).fetchone()
+        query = """
+        SELECT c.quantity, p.name 
+        FROM cart c
+        JOIN products p ON c.product_id = p.id
+        WHERE c.id = ? AND c.user_id = ?
+        """
+        item = conn.execute(query, (cart_id, session['user_id'])).fetchone()
 
         if item:
+            product_name = item['name']
             new_quantity = item['quantity'] - 1
+            
             if new_quantity >= 1:
-                conn.execute('UPDATE cart SET quantity = ? WHERE id = ?', (new_quantity, cart_id))
-                flash(f'Decreased quantity of {item["name"]}.', 'success')
+                conn.execute(
+                    'UPDATE cart SET quantity = ? WHERE id = ? AND user_id = ?', 
+                    (new_quantity, cart_id, session['user_id'])
+                )
+                flash(f'Decreased quantity of {product_name}.', 'success')
             else:
-                conn.execute('DELETE FROM cart WHERE id = ?', (cart_id,))
-                flash(f'Removed {item["name"]} from cart.', 'info')
+                # 3. Delete the item from the cart table
+                conn.execute(
+                    'DELETE FROM cart WHERE id = ? AND user_id = ?', 
+                    (cart_id, session['user_id'])
+                )
+                flash(f'Removed {product_name} from cart.', 'info')
+                
             conn.commit()
         else:
-            flash('Cart item not found.', 'danger')
+            flash('Cart item not found or does not belong to your account.', 'danger')
     except Exception as e:
         conn.rollback()
-        flash(f'An error occurred: {e}', 'danger')
+        flash(f'An error occurred: {e}', 'danger') 
     finally:
         conn.close()
     return redirect(url_for('cart'))
