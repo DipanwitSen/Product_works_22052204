@@ -175,6 +175,14 @@ def get_user_cart_items(user_id):
     ''', (user_id,))
     return cursor.fetchall()
 
+def delete_file_if_exists(filename):
+    """Deletes a file from the UPLOAD_FOLDER if it exists."""
+    if filename and filename != 'default.jpg': # Prevent deleting a default placeholder image
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            print(f"Deleted file: {file_path}")
+
 # Routes: Authentication
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -267,6 +275,9 @@ def product_details(product_id):
     
     return render_template('product_details.html', product=product_dict)
 
+
+# app.py - Routes: Products (start replacement here)
+
 @app.route('/add_product', methods=['GET', 'POST'])
 @login_required
 @seller_required
@@ -274,31 +285,24 @@ def add_product():
     if request.method == 'POST':
         name = request.form.get('name', '').strip()
         price_str = request.form.get('price', '0').strip()
-        description = request.form.get('description', '').strip()
         variant = request.form.get('variant', '').strip()
         stock_str = request.form.get('stock', '0').strip()
         specifications = request.form.get('specifications', '').strip()
         manufacturing_area = request.form.get('manufacturing_area', '').strip()
+        description = request.form.get('description', '').strip()
+        image_file = request.files.get('image_file')
 
         try:
             price = float(price_str)
-        except ValueError:
-            price = 0.0
-        try:
             stock = int(stock_str)
         except ValueError:
-            stock = 0
+            flash("Invalid price or stock value.", 'error')
+            return render_template('add_product.html')
 
-        image_file = request.files.get('image_file')
-        image_url = None
-
-        if image_file and image_file.filename:
-            filename = secure_filename(image_file.filename)
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-            image_file.save(filepath)
-            image_url = url_for('static', filename=f'images/products/{filename}')
-        else:
-            image_url = 'https://via.placeholder.com/400x300.png?text=No+Image'
+        image_url = save_image(image_file)
+        if not image_url:
+            flash("Product image is required or the file type is invalid (use png, jpg, jpeg, gif).", 'error')
+            return render_template('add_product.html')
 
         db = get_db()
         cursor = db.cursor()
@@ -310,9 +314,119 @@ def add_product():
 
         flash(f"Product '{name}' added successfully!", 'success')
         return redirect(url_for('index'))
-
+    
     return render_template('add_product.html')
 
+
+@app.route('/edit_product/<int:product_id>', methods=['GET', 'POST'])
+@login_required
+@seller_required
+def edit_product(product_id):
+    db = get_db()
+    cursor = db.cursor()
+    
+    # 1. Fetch product and check existence
+    cursor.execute("SELECT * FROM products WHERE id = ?", (product_id,))
+    product = cursor.fetchone()
+    
+    if not product:
+        flash("Product not found.", 'error')
+        return redirect(url_for('index'))
+    
+    product_dict = dict(product) # Convert to dictionary for easier template usage
+    
+    # 2. Check ownership
+    if product_dict['seller_id'] != session.get('user_id'):
+        flash("You can only edit products you have listed.", 'error')
+        return redirect(url_for('product_details', product_id=product_id))
+
+    if request.method == 'POST':
+        # Get data from form
+        name = request.form.get('name', '').strip()
+        price_str = request.form.get('price', '0').strip()
+        variant = request.form.get('variant', '').strip()
+        stock_str = request.form.get('stock', '0').strip()
+        specifications = request.form.get('specifications', '').strip()
+        manufacturing_area = request.form.get('manufacturing_area', '').strip()
+        description = request.form.get('description', '').strip()
+        image_file = request.files.get('image_file')
+
+        try:
+            price = float(price_str)
+            stock = int(stock_str)
+        except ValueError:
+            flash("Invalid price or stock value.", 'error')
+            # Pass back product_dict to re-populate the form
+            return render_template('add_product.html', product=product_dict)
+
+        # Handle image upload
+        image_url = product_dict['image_url']
+        if image_file and image_file.filename != '':
+            new_image_url = save_image(image_file)
+            if new_image_url:
+                # OPTIONAL: Delete old image file from UPLOAD_FOLDER
+                if image_url:
+                    old_filename = os.path.basename(image_url)
+                    old_filepath = os.path.join(app.config['UPLOAD_FOLDER'], old_filename)
+                    if os.path.exists(old_filepath):
+                        os.remove(old_filepath)
+                image_url = new_image_url
+            else:
+                flash("Invalid image file type. Supported types: png, jpg, jpeg, gif.", 'error')
+                return render_template('add_product.html', product=product_dict)
+
+        # Update product in DB
+        cursor.execute('''
+            UPDATE products 
+            SET name = ?, description = ?, price = ?, image_url = ?, variant = ?, stock = ?, specifications = ?, manufacturing_area = ?
+            WHERE id = ?
+        ''', (name, description, price, image_url, variant, stock, specifications, manufacturing_area, product_id))
+        db.commit()
+
+        flash("Product updated successfully!", 'success')
+        return redirect(url_for('product_details', product_id=product_id))
+
+    # GET request: Show edit form
+    return render_template('add_product.html', product=product_dict)
+
+@app.route('/delete_product/<int:product_id>', methods=['POST'])
+@login_required
+@seller_required
+def delete_product(product_id):
+    db = get_db()
+    cursor = db.cursor()
+    
+    # 1. Fetch product and check existence
+    cursor.execute("SELECT * FROM products WHERE id = ?", (product_id,))
+    product = cursor.fetchone()
+    
+    if not product:
+        flash("Product not found.", 'error')
+        return redirect(url_for('index'))
+    
+    product_dict = dict(product)
+    
+    # 2. Check ownership
+    if product_dict['seller_id'] != session.get('user_id'):
+        flash("You can only delete products you have listed.", 'error')
+        return redirect(url_for('product_details', product_id=product_id))
+
+    # 3. Delete image file from server
+    if product_dict['image_url']:
+        try:
+            filename = os.path.basename(product_dict['image_url'])
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            if os.path.exists(filepath):
+                os.remove(filepath)
+        except Exception as e:
+            print(f"Error deleting image file {filename}: {e}")
+
+    # 4. Delete product from DB
+    cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
+    db.commit()
+    
+    flash(f"Product '{product_dict['name']}' has been deleted successfully.", 'success')
+    return redirect(url_for('index'))
 
 # Routes: Cart & Wishlist
 
